@@ -12,6 +12,8 @@ import { renderFlight, mountFlight } from './ui/screens/flight.js';
 import { renderReport } from './ui/screens/report.js';
 import { openCodex, openHowTo, openAbout, closeOverlays, overlayOpen, toast, trapFocus } from './ui/overlays.js';
 import { preloadTextures } from './ui/flightCanvas.js';
+import { launchStack } from './ui/launchStack.js';
+import { syncRocketView, disposeRocketView, onRocketViewFail } from './ui/rocketView3d.js';
 import { startTour, tourSeen, endTour, tourActive } from './ui/tour.js';
 import { play, setMuted, isMuted } from './ui/audio.js';
 import { smart } from './ui/util.js';
@@ -40,12 +42,13 @@ function render(opts = {}) {
   if (screenChanged) endTour(false);
   const ctx = ctxOf(state);
   let html = '';
+  let designMetrics = null;
   let title = tx('GO/NO-GO · Space Mission Design Game', 'GO/NO-GO · Game Desain Misi Antariksa');
   switch (state.screen) {
     case 'title': html = renderTitle(state); break;
     case 'scenarios': html = renderScenarios(state); title = tx('Choose a mission · GO/NO-GO', 'Pilih misi · GO/NO-GO'); break;
     case 'briefing': html = renderBriefing(state, ctx); title = `${ctx.scenario.name} · Brief · GO/NO-GO`; break;
-    case 'design': html = renderDesign(state, metrics(), ctx, null); title = `${ctx.scenario.name} · ${tx('Design room', 'Ruang desain')} · GO/NO-GO`; break;
+    case 'design': designMetrics = metrics(); html = renderDesign(state, designMetrics, ctx, null); title = `${ctx.scenario.name} · ${tx('Design room', 'Ruang desain')} · GO/NO-GO`; break;
     case 'gonogo': html = renderGoNoGo(state, metrics(), ctx); title = `${tx('Go/No-Go poll', 'Poll Go/No-Go')} · GO/NO-GO`; break;
     case 'flight': html = renderFlight(state, state.flightMetrics, ctx); title = `${tx('In flight', 'Dalam penerbangan')} · GO/NO-GO`; break;
     case 'report': html = renderReport(state, state.flightMetrics, ctx); title = `${tx('Mission report', 'Laporan misi')} · GO/NO-GO`; break;
@@ -54,6 +57,8 @@ function render(opts = {}) {
   document.title = title;
   app.innerHTML = html;
   lastScreen = state.screen;
+  if (designMetrics) syncStack(designMetrics);
+  else disposeRocketView();
 
   if (state.screen === 'flight' && !flightCtl) {
     flightCtl = mountFlight(app, { state, m: state.flightMetrics, ctx, onFinish: finishFlight });
@@ -89,7 +94,18 @@ function renderDash(previewDesign = null) {
   el.innerHTML = renderDashboard(state, m, ctxOf(state), p);
   el.scrollTop = scroll;
   if (focusKey) el.querySelector(`[data-focus="${focusKey}"]`)?.focus({ preventScroll: true });
+  syncStack(m, p);
 }
+
+/** Re-attach the 3D rocket to its slot (the dashboard HTML was just rebuilt) and show the current design. */
+function syncStack(m, p = null) {
+  const slot = app.querySelector('[data-rocket-slot]');
+  syncRocketView(slot, launchStack(m, p), state.tab === 'launch' ? 'rocket' : 'payload');
+}
+onRocketViewFail(() => {
+  state.rocket3dFailed = true;
+  if (state.screen === 'design') renderDash();
+});
 
 function go(screen, opts) {
   state.screen = screen;
@@ -297,6 +313,7 @@ app.addEventListener('click', (e) => {
       break;
     }
     case 'gauge': state.openGauge = state.openGauge === el.dataset.id ? null : el.dataset.id; renderDash(); break;
+    case 'stack-view': state.stackView = el.dataset.id; renderDash(); break;
     case 'starter': loadStarter(); render(); toast(tx('Starter design loaded. It flies, but look for its flaws.', 'Desain awal dimuat. Bisa terbang, tapi cari kelemahannya.')); break;
     case 'reset-design': state.design = normalizeDesign(EMPTY_DESIGN); state.votes = {}; render(); toast(tx('Design cleared.', 'Desain dikosongkan.')); break;
     case 'share': copyShare(); break;

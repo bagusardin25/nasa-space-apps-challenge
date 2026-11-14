@@ -22,6 +22,8 @@ export function initialState() {
     preview: null,
     showOtherInstruments: false,
     openGauge: null,
+    stackView: 'rocket',
+    rocket3dFailed: false,
     votes: {},
     overrides: 0,
     runCount: 0,

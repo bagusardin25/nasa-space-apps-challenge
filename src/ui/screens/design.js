@@ -12,6 +12,7 @@ import { topBar, optCard, badge, section, grid, concept, issueItem, reqRow, role
 import { playerFor, ROLE_IDS } from '../../state.js';
 import { tx, nameOf, blurbOf, fieldOf, capLabel, launchClassLabel } from '../../i18n.js';
 import { satelliteSchematic } from '../satSchematic.js';
+import { launchStack, launchStackPanel } from '../launchStack.js';
 
 const tabLabel = (id) => roleMeta(id).name;
 const lcl = (cls) => launchClassLabel(cls, LAUNCH_CLASS_LABEL[cls]);
@@ -375,6 +376,20 @@ function delta(v, unit, goodWhen, digits = 1, threshold = 0.05) {
   return `<span class="delta ${good ? 'is-good' : 'is-bad'}">${signed(v, unit, digits)}</span>`;
 }
 
+/** Top dashboard panel: the 3D launch stack, or the flat spacecraft schematic. */
+function assemblyPanel(state, m, p) {
+  if (state.rocket3dFailed) return satelliteSchematic(m, p);
+  const view = state.stackView === 'sat' ? 'sat' : 'rocket';
+  const btn = (id, ic, label) => `<button type="button" class="asm-btn ${view === id ? 'is-on' : ''}" aria-pressed="${view === id}"
+      data-action="stack-view" data-id="${id}" data-focus="asm-${id}">${icon(ic, { size: 14 })}<span>${label}</span></button>`;
+  return `<div class="asm">
+    <div class="asm-switch" role="group" aria-label="${tx('Assembly view', 'Tampilan rakitan')}">
+      ${btn('rocket', 'rocket', tx('Rocket 3D', 'Roket 3D'))}${btn('sat', 'satellite', tx('Schematic', 'Skema'))}
+    </div>
+    ${view === 'rocket' ? launchStackPanel(launchStack(m, p)) : satelliteSchematic(m, p)}
+  </div>`;
+}
+
 export function renderDashboard(state, m, ctx, p) {
   const c = m.cost;
   const spend = c.spend;
@@ -411,7 +426,7 @@ export function renderDashboard(state, m, ctx, p) {
   const costDelta = p ? delta(p.cost.total - m.cost.total, 'M', 'down', 1, 0.05) : '';
 
   return `<div class="dash-inner">
-    ${satelliteSchematic(m, p)}
+    ${assemblyPanel(state, m, p)}
     <div class="dash-block budget-block">
       <div class="dash-row"><span class="dash-label">${icon('coins', { size: 16 })} ${tx('Budget', 'Anggaran')}</span>${statusPill(m.complete ? budgetTone : (c.total > c.cap ? 'nogo' : 'incomplete'))}</div>
       <div class="budget-big"><strong>${money(c.total)}</strong>${costDelta}<span class="muted"> ${tx('of', 'dari')} ${money(c.cap)}</span></div>
