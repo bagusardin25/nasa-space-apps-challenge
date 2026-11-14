@@ -1,0 +1,11 @@
+{
+  "name": "go-no-go-mission-design-game",
+  "version": "0.1.0",
+  "private": true,
+  "description": "GO/NO-GO: an interactive space mission design game (NASA Space Apps Challenge 2026 prototype).",
+  "type": "module",
+  "scripts": {
+    "start": "python serve.py 5173",
+    "test": "node tests/engine.test.js"
+  }
+}
