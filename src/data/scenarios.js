@@ -14,7 +14,7 @@ export const SCENARIOS = [
     kind: 'Earth observation',
     where: 'East Java, Indonesia',
     icon: 'volcano',
-    accent: '#ff8a4c',
+    accent: '#e07a4f',
     tagline: 'Catch the next eruption before it reaches the villages.',
     brief:
       'Semeru, the highest volcano on Java, sits about 100 km south of Surabaya. In December 2021 a sudden collapse sent hot ash flows ' +
@@ -153,7 +153,7 @@ export const SCENARIOS = [
     kind: 'Communications',
     where: 'Indonesian islands',
     icon: 'islands',
-    accent: '#5ee0c2',
+    accent: '#6fb5a4',
     tagline: 'Connect 17,000 islands with a satellite you can afford.',
     brief:
       'Many fishing villages and remote islands in Indonesia have no mobile signal. Weather sensors, fishers and health workers need to ' +
@@ -258,7 +258,7 @@ export const SCENARIOS = [
     kind: 'Planetary science',
     where: 'Lunar south pole',
     icon: 'moon',
-    accent: '#c9b8ff',
+    accent: '#b6aecb',
     tagline: 'Find the water that future astronauts will drink.',
     brief:
       'Craters near the Moon\'s poles have floors that never see sunlight and may trap water ice. Ice could give future explorers drinking ' +
@@ -366,7 +366,7 @@ export const SCENARIOS = [
     kind: 'Space weather',
     where: 'Sun–Earth L1',
     icon: 'sun',
-    accent: '#ffd166',
+    accent: '#e2b250',
     tagline: 'Give Earth an hour of warning before a solar storm hits.',
     brief:
       'Solar storms can knock out power grids, GPS and satellites. A spacecraft at the L1 point, 1.5 million km toward the Sun, ' +

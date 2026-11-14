@@ -145,7 +145,7 @@ export const EVENTS = [
         resolve: () => ({ text: tx('Lighter eclipse loads slow the battery\'s decline.', 'Beban gerhana yang lebih ringan memperlambat penurunan baterai.'), effects: { scienceMult: 1 - ctx.m.info.eclipseFrac * 0.5, lifeMonths: 6 } }) },
       { id: 'push', label: tx('Keep full operations', 'Tetap operasi penuh'),
         detail: tx('Full science now, shorter life.', 'Sains penuh sekarang, umur lebih pendek.'),
-        resolve: () => ({ text: tx('Full speed ahead. The battery will give out sooner.', 'Gas penuh. Baterai akan habis lebih cepat.'), effects: { lifeMonths: -8 } }) },
+        resolve: () => ({ text: tx('Full operations continue. The battery will wear out sooner.', 'Operasi penuh berlanjut. Baterai akan aus lebih cepat.'), effects: { lifeMonths: -8 } }) },
     ],
   },
   {
@@ -197,7 +197,7 @@ export const EVENTS = [
       { id: 'priority', label: tx('Prioritize emergency messages', 'Prioritaskan pesan darurat'),
         detail: tx('The more often you pass overhead, the more you help.', 'Semakin sering kamu melintas, semakin besar bantuanmu.'),
         resolve: () => (ctx.m.passes >= 8
-          ? { text: tx('With frequent passes, rescue teams could send updates every hour or two. Your relay became their lifeline.', 'Dengan lintasan yang sering, tim penyelamat bisa mengirim kabar setiap satu-dua jam. Relaimu menjadi penyelamat mereka.'), effects: { bonusYears: 0.3 } }
+          ? { text: tx('With frequent passes, rescue teams could send updates every hour or two.', 'Dengan lintasan yang sering, tim penyelamat bisa mengirim kabar setiap satu-dua jam.'), effects: { bonusYears: 0.3 } }
           : { text: tx('You relayed what you could, but hours passed between overflights.', 'Kamu meneruskan sebisanya, tapi berjam-jam berlalu di antara lintasan.'), effects: { bonusYears: 0.1 } }) },
       { id: 'normal', label: tx('Keep normal service', 'Tetap layanan normal'),
         detail: tx('Treat all users equally.', 'Perlakukan semua pengguna sama.'),

@@ -15,11 +15,11 @@ export function steps() {
   ];
 }
 
+/** Two annunciator lamps: GO lit, NO-GO dark. */
 export function brandMark(size = 28) {
   return `<svg class="brand-mark" width="${size}" height="${size}" viewBox="0 0 64 64" aria-hidden="true">
-    <ellipse cx="32" cy="32" rx="26" ry="10" fill="none" stroke="currentColor" stroke-width="3.2" opacity=".85" transform="rotate(-25 32 32)"/>
-    <circle cx="32" cy="32" r="9.5" fill="var(--go)"/>
-    <circle cx="54" cy="21" r="4.5" fill="var(--launch)"/>
+    <rect x="4" y="14" width="24" height="36" rx="2" fill="var(--go)"/>
+    <rect x="35.5" y="15.5" width="21" height="33" rx="1.5" fill="none" stroke="var(--nogo)" stroke-width="3"/>
   </svg>`;
 }
 

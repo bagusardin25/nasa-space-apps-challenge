@@ -3,49 +3,129 @@ import { SCENARIOS, DIFFICULTIES } from '../../data/scenarios.js';
 import { ROLES } from '../../data/catalog.js';
 import { icon, ROLE_ICON } from '../icons.js';
 import { esc, money } from '../util.js';
-import { brandMark, topBar, concept, prefTools, roleMeta } from '../components.js';
+import { brandMark, topBar, concept, prefTools, roleMeta, statusPill } from '../components.js';
 import { leaderboard } from '../../state.js';
 import { tx, loc } from '../../i18n.js';
 
 export function renderTitle() {
-  return `<div class="corner-tools">${prefTools()}</div>
-  <main class="title-screen" id="main">
-    <div class="title-sky" aria-hidden="true">
-      <svg class="title-orbit" viewBox="0 0 600 600">
-        <defs>
-          <radialGradient id="tg-planet" cx="40%" cy="35%" r="70%">
-            <stop offset="0%" stop-color="#3b7bd8"/><stop offset="55%" stop-color="#1a3f7a"/><stop offset="100%" stop-color="#081530"/>
-          </radialGradient>
-        </defs>
-        <circle cx="300" cy="300" r="120" fill="url(#tg-planet)"/>
-        <ellipse class="to-ring r1" cx="300" cy="300" rx="235" ry="78" transform="rotate(-22 300 300)"/>
-        <ellipse class="to-ring r2" cx="300" cy="300" rx="190" ry="190"/>
-        <ellipse class="to-ring r3" cx="300" cy="300" rx="275" ry="40" transform="rotate(12 300 300)"/>
-        <g class="to-sat s1"><circle r="6" fill="var(--launch)"/></g>
-        <g class="to-sat s2"><circle r="4.5" fill="var(--go)"/></g>
-      </svg>
-    </div>
-    <div class="title-content">
-      <p class="eyebrow">NASA Space Apps Challenge 2026 · ${tx('Space Mission Design Game', 'Game Desain Misi Antariksa')}</p>
-      <h1 class="title-h1">${brandMark(56)}<span>GO/NO-GO</span></h1>
-      <p class="title-tag">${tx('Every choice has a cost. Can your team still launch?', 'Setiap pilihan ada harganya. Masih bisakah timmu meluncur?')}</p>
-      <ul class="title-points">
-        <li>${icon('satellite', { size: 20 })}<span>${tx('<strong>Design a real mission.</strong> Pick instruments, orbit, rocket, power, radios and a ground team.',
-          '<strong>Rancang misi sungguhan.</strong> Pilih instrumen, orbit, roket, daya, radio, dan tim darat.')}</span></li>
-        <li>${icon('gauge', { size: 20 })}<span>${tx('<strong>See every trade-off live.</strong> Mass, power, budget, data, comms, time and delta-v react to each choice.',
-          '<strong>Lihat setiap trade-off secara langsung.</strong> Massa, daya, anggaran, data, komunikasi, waktu, dan delta-v berubah di setiap pilihan.')}</span></li>
-        <li>${icon('rocket', { size: 20 })}<span>${tx('<strong>Fly it.</strong> Survive solar storms and space debris, then learn exactly why your mission worked, or didn\'t.',
-          '<strong>Terbangkan.</strong> Hadapi badai Matahari dan sampah antariksa, lalu pelajari kenapa misimu berhasil atau gagal.')}</span></li>
-      </ul>
-      <div class="title-cta">
-        <button type="button" class="btn btn-primary btn-lg" data-action="go" data-screen="scenarios" data-focus="start">${icon('play')}<span>${tx('Start a mission', 'Mulai misi')}</span></button>
-        <button type="button" class="btn btn-secondary btn-lg" data-action="howto">${icon('info')}<span>${tx('How to play', 'Cara bermain')}</span></button>
-        <button type="button" class="btn btn-ghost btn-lg" data-action="about">${icon('book')}<span>${tx('About & NASA sources', 'Tentang & sumber NASA')}</span></button>
-      </div>
-      <p class="title-foot">${tx('Play solo, or as a team of up to four, each owning one of NASA\'s four mission segments.',
-        'Main sendiri, atau sebagai tim hingga empat orang, masing-masing memegang satu dari empat segmen misi NASA.')}</p>
-    </div>
-  </main>`;
+  const station = (id, status, note) => {
+    const r = roleMeta(id);
+    return `<li>${icon(ROLE_ICON[id], { size: 18 })}<span class="lp-who"><strong>${esc(r.title)}</strong><span>${esc(note ?? r.segment)}</span></span>${statusPill(status)}</li>`;
+  };
+  const steps = [
+    [tx('Brief', 'Brief'), tx('Choose a mission and a priority. The priority sets measurable requirements.', 'Pilih misi dan prioritas. Prioritas menentukan requirement yang bisa diukur.')],
+    [tx('Design', 'Desain'), tx('Four stations pick instruments, orbit, rocket, power and radios. Every choice moves mass, power, budget and data.', 'Empat stasiun memilih instrumen, orbit, roket, daya, dan radio. Setiap pilihan menggeser massa, daya, anggaran, dan data.')],
+    ['Go/No-Go', tx('Each station reports GO, CAUTION or NO-GO. In team mode every lead votes.', 'Setiap stasiun melapor GO, WASPADA, atau NO-GO. Dalam mode tim, setiap pimpinan memberi suara.')],
+    [tx('Flight', 'Terbang'), tx('Launch, reach orbit, and make calls when storms, debris and failures happen.', 'Luncurkan, capai orbit, dan ambil keputusan saat badai, sampah antariksa, dan kerusakan terjadi.')],
+    [tx('Report', 'Laporan'), tx('See the score, the cause of every problem, real NASA data for your target, and similar real missions.', 'Lihat skor, penyebab setiap masalah, data NASA asli untuk targetmu, dan misi nyata yang mirip.')],
+  ];
+  const decides = {
+    science: [tx('Instruments', 'Instrumen'), tx('Resolution and revisit', 'Resolusi dan kunjungan ulang'), tx('Science return', 'Hasil sains')],
+    launch: [tx('Orbit and inclination', 'Orbit dan inklinasi'), tx('Number of spacecraft', 'Jumlah wahana'), tx('Launch vehicle', 'Roket peluncur')],
+    spacecraft: [tx('Bus, solar arrays, battery', 'Bus, panel surya, baterai'), tx('Attitude control', 'Kendali sikap'), tx('Propulsion and delta-v', 'Propulsi dan delta-v')],
+    ground: [tx('Radio band', 'Pita radio'), tx('Ground stations or the DSN', 'Stasiun bumi atau DSN'), tx('Operations team', 'Tim operasi')],
+  };
+  const roles = ['science', 'launch', 'spacecraft', 'ground'].map((id, i) => {
+    const r = roleMeta(id);
+    return `<div class="lp-role">
+      <p class="lp-seg">${icon(ROLE_ICON[id], { size: 14 })} ${tx('Station', 'Stasiun')} ${i + 1} · ${esc(r.segment)}</p>
+      <h3>${esc(r.title)}</h3>
+      <p>${esc(r.blurb)}</p>
+      <ul>${decides[id].map((d) => `<li>${esc(d)}</li>`).join('')}</ul>
+    </div>`;
+  }).join('');
+  const data = [
+    [tx('Earth globe', 'Bola Bumi'), 'Blue Marble · NASA GIBS'],
+    [tx('East Java from orbit', 'Jawa Timur dari orbit'), 'Aqua MODIS · GIBS / Worldview'],
+    [tx('Indonesia at night', 'Indonesia di malam hari'), 'Black Marble (VIIRS) · GIBS'],
+    [tx('Today\'s Sun', 'Matahari hari ini'), tx('SDO AIA 193 Å, live', 'SDO AIA 193 Å, langsung')],
+    [tx('Moon map', 'Peta Bulan'), 'SVS CGI Moon Kit (LRO)'],
+  ];
+  const models = [
+    [tx('Orbital period, eclipse length', 'Periode orbit, lama gerhana'), tx('Kepler\'s third law', 'Hukum Kepler ketiga')],
+    [tx('Solar array and battery sizing', 'Ukuran panel surya dan baterai'), 'SMAD'],
+    [tx('Delta-v and propellant', 'Delta-v dan propelan'), 'Tsiolkovsky'],
+    [tx('Battery wear', 'Keausan baterai'), tx('Li-ion cycle life', 'Umur siklus Li-ion')],
+    [tx('Swath and revisit', 'Sapuan dan kunjungan ulang'), tx('Ground-track geometry', 'Geometri lintasan')],
+  ];
+  const list = (rows) => `<ul class="lp-list">${rows.map(([k, v]) => `<li><span>${esc(k)}</span><span class="src">${esc(v)}</span></li>`).join('')}</ul>`;
+
+  return `<div class="lp">
+    <header class="lp-bar">
+      <span class="lp-brand">${brandMark(26)}<span class="brand-name">GO/NO-GO</span></span>
+      ${prefTools()}
+    </header>
+
+    <main id="main">
+      <section class="lp-hero">
+        <div>
+          <p class="lp-event">NASA Space Apps Challenge 2026 · Surabaya</p>
+          <h1 class="lp-title">GO/NO-GO</h1>
+          <p class="lp-sub">${tx('A space mission design game for one to four players.', 'Game desain misi antariksa untuk satu sampai empat pemain.')}</p>
+          <p class="lp-body">${tx(
+    'Pick a real problem: watch Semeru for eruptions, link remote islands, find ice on the Moon, or warn Earth of solar storms. Design the spacecraft, hold the launch poll, fly the mission, then read exactly why it worked or failed.',
+    'Pilih masalah nyata: memantau erupsi Semeru, menghubungkan pulau terpencil, mencari es di Bulan, atau memperingatkan Bumi akan badai Matahari. Rancang wahananya, gelar poll peluncuran, terbangkan misinya, lalu baca dengan jelas kenapa misi itu berhasil atau gagal.')}</p>
+          <div class="lp-cta">
+            <button type="button" class="btn btn-primary btn-lg" data-action="go" data-screen="scenarios" data-focus="start">${icon('play')}<span>${tx('Start a mission', 'Mulai misi')}</span></button>
+            <button type="button" class="btn btn-secondary btn-lg" data-action="howto">${icon('info')}<span>${tx('How to play', 'Cara bermain')}</span></button>
+            <button type="button" class="lp-link" data-action="about">${tx('About & NASA sources', 'Tentang & sumber NASA')}</button>
+          </div>
+        </div>
+        <figure class="lp-panel" aria-label="${tx('Example of a launch poll', 'Contoh poll peluncuran')}">
+          <div class="lp-panel-h"><span>${tx('Launch poll', 'Poll peluncuran')}</span><span>Semeru Watch · T−10 ${tx('min', 'mnt')}</span></div>
+          <ol class="lp-poll">
+            ${station('science', 'go')}
+            ${station('launch', 'go')}
+            ${station('spacecraft', 'caution', tx('Power margin 6%, below the 10% minimum', 'Margin daya 6%, di bawah batas 10%'))}
+            ${station('ground', 'go')}
+          </ol>
+          <figcaption class="lp-panel-f">${tx('Every station reports before launch. You can override a caution, and the flight will show what it cost.',
+    'Setiap stasiun melapor sebelum peluncuran. Kamu boleh mengabaikan peringatan, dan penerbangan akan menunjukkan akibatnya.')}</figcaption>
+        </figure>
+      </section>
+
+      <section class="lp-sec" aria-labelledby="lp-steps-h">
+        <div class="lp-sec-h">
+          <h2 id="lp-steps-h">${tx('How a mission runs', 'Alur satu misi')}</h2>
+          <p>${tx('The same arc NASA teams follow, from a question to a flown mission. One round takes about fifteen minutes.',
+    'Alur yang sama dengan tim NASA, dari sebuah pertanyaan hingga misi yang terbang. Satu ronde sekitar lima belas menit.')}</p>
+        </div>
+        <ol class="lp-steps">${steps.map(([h, p], i) => `<li><span class="lp-n">0${i + 1}</span><strong>${esc(h)}</strong><p>${esc(p)}</p></li>`).join('')}</ol>
+      </section>
+
+      <section class="lp-sec" aria-labelledby="lp-roles-h">
+        <div class="lp-sec-h">
+          <h2 id="lp-roles-h">${tx('Four stations, one budget', 'Empat stasiun, satu anggaran')}</h2>
+          <p>${tx('NASA describes a science mission as four segments. Here each one is a role with its own goal, and all four share one budget.',
+    'NASA membagi misi sains menjadi empat segmen. Di sini masing-masing menjadi peran dengan target sendiri, dan keempatnya berbagi satu anggaran.')}</p>
+        </div>
+        <div class="lp-roles">${roles}</div>
+      </section>
+
+      <section class="lp-sec" aria-labelledby="lp-data-h">
+        <div class="lp-sec-h">
+          <h2 id="lp-data-h">${tx('Data and models', 'Data dan model')}</h2>
+          <p>${tx('Open NASA data and textbook formulas, simplified so a round takes minutes instead of months.',
+    'Data terbuka NASA dan rumus buku teks, disederhanakan agar satu ronde cukup beberapa menit, bukan berbulan-bulan.')}</p>
+        </div>
+        <div class="lp-cols">
+          <div><h3>${tx('NASA data in the game', 'Data NASA di dalam game')}</h3>${list(data)}</div>
+          <div><h3>${tx('Models', 'Model')}</h3>${list(models)}</div>
+        </div>
+        <p class="lp-note">${tx('Component numbers are rounded game values that keep real-world proportions. They are not engineering data.',
+    'Angka komponen adalah nilai game yang dibulatkan dengan proporsi dunia nyata, bukan data rekayasa.')}</p>
+      </section>
+
+      <footer class="lp-foot">
+        <span>${tx('Prototype for NASA Space Apps Challenge 2026, Surabaya. Not an official NASA product.', 'Prototipe untuk NASA Space Apps Challenge 2026, Surabaya. Bukan produk resmi NASA.')}</span>
+        <nav aria-label="${tx('More', 'Lainnya')}">
+          <button type="button" class="btn btn-ghost btn-sm" data-action="howto">${tx('How to play', 'Cara bermain')}</button>
+          <button type="button" class="btn btn-ghost btn-sm" data-action="about">${tx('NASA sources', 'Sumber NASA')}</button>
+          <button type="button" class="btn btn-ghost btn-sm" data-action="codex">Codex</button>
+        </nav>
+      </footer>
+    </main>
+  </div>`;
 }
 
 export function renderScenarios(state) {
