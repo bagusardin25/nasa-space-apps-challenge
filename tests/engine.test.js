@@ -11,6 +11,8 @@ import { EVENTS } from '../src/data/events.js';
 import { ID_TEXT, ID_CAPS } from '../src/data/i18n-id.js';
 import { CAPABILITIES, ROLES } from '../src/data/catalog.js';
 import { setLang } from '../src/i18n.js';
+import { satelliteSchematic } from '../src/ui/satSchematic.js';
+import { flightChart } from '../src/ui/flightChart.js';
 
 let passed = 0;
 function test(name, fn) {
@@ -243,6 +245,66 @@ test('the whole game runs in Bahasa Indonesia without errors', () => {
   } finally {
     setLang('en');
   }
+});
+
+console.log('Design room schematic');
+
+test('the spacecraft schematic draws every design without broken numbers', () => {
+  for (const s of SCENARIOS) {
+    const ctx = ctxFor(s.id, s.priorities[0].id);
+    const empty = computeMission({}, ctx);
+    const designs = [{}, s.starter, ...Object.values(s.guide ?? {})];
+    for (const bus of CATALOG.buses) for (const solar of CATALOG.solar) designs.push({ ...s.starter, bus: bus.id, solar: solar.id });
+    for (const prop of CATALOG.propulsion) designs.push({ ...s.starter, propulsion: prop.id, propellant: 3 });
+    for (const radio of CATALOG.radios) designs.push({ ...s.starter, radio: radio.id });
+    for (const inst of CATALOG.instruments) designs.push({ ...s.starter, bus: 'medium', instruments: [inst.id] });
+    for (const d of designs) {
+      const m = computeMission(d, ctx);
+      for (const html of [satelliteSchematic(m), satelliteSchematic(empty, m)]) {
+        assert.ok(html.includes('<svg'), 'no svg');
+        assert.ok(!/NaN|undefined|Infinity/.test(html), `bad value in schematic for ${s.id} ${JSON.stringify(d)}`);
+      }
+    }
+  }
+});
+
+test('the schematic follows the chosen parts and marks previews', () => {
+  const s = getScenario('semeru');
+  const ctx = ctxFor('semeru', s.priorities[0].id);
+  const base = computeMission({ ...s.starter, bus: 'smallsat', solar: 'sa-fixed', propulsion: 'prop-none', propellant: 0 }, ctx);
+  const next = computeMission({ ...s.starter, bus: 'smallsat', solar: 'sa-track', propulsion: 'prop-mono', propellant: 5 }, ctx);
+  const a = satelliteSchematic(base);
+  const b = satelliteSchematic(next);
+  assert.notEqual(a, b);
+  assert.ok(!a.includes('sch-joint') && b.includes('sch-joint'), 'tracking wings should add a rotary joint');
+  assert.ok(!a.includes('sch-tank') && b.includes('sch-tank'), 'propulsion should add a tank');
+  assert.ok(!a.includes('sch-new'));
+  assert.ok(satelliteSchematic(base, next).includes('sch-new'), 'previewed changes should be highlighted');
+});
+
+test('the flight recorder chart draws a finished flight and stays empty without a trace', () => {
+  const s = getScenario('lunar');
+  const ctx = ctxFor('lunar', s.priorities[0].id);
+  const guide = Object.values(s.guide)[0];
+  const m = computeMission({ ...guide, propellant: autoPropellant(guide, ctx) }, ctx);
+  let seed = 1;
+  let f = createFlight(m, ctx, seed);
+  while (f.lost && seed < 50) f = createFlight(m, ctx, ++seed);
+  assert.equal(f.lost, null, 'expected at least one seed to reach orbit');
+  assert.equal(flightChart(f), '');
+  const target = m.science.target * m.life.required;
+  f.trace = { science: [[0, 0]], fuel: [[0, f.dvLeft]], dv0: f.dvLeft };
+  autopilot(f, m, ctx, (view) => {
+    f.trace.science.push([f.month, f.science / target]);
+    f.trace.fuel.push([f.month, f.dvLeft]);
+    return view.options.find((o) => !o.disabled)?.id;
+  });
+  f.trace.science.push([f.month + 1, f.science / target]);
+  f.trace.fuel.push([f.month + 1, f.dvLeft]);
+  const html = flightChart(f);
+  assert.ok(html.includes('fc-sci') && html.includes('fc-fuel'));
+  assert.ok(!/NaN|undefined|Infinity/.test(html));
+  assert.equal((html.match(/class="fc-mark/g) ?? []).length, f.decisions.length);
 });
 
 console.log(`\n${passed} passed${process.exitCode ? ', some FAILED' : ''}`);
