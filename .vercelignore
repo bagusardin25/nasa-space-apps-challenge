@@ -1,0 +1,14 @@
+# Not needed on the live site: the game is static files only (no build step).
+.env*
+.vercel/
+tests/
+docs/
+serve.py
+package.json
+__pycache__/
+*.py[cod]
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.log
