@@ -11,6 +11,7 @@ import { esc, num, smart, money, kg, watts, pct, rate, gb, minutes, years, revis
 import { topBar, optCard, badge, section, grid, concept, issueItem, reqRow, roleMeta } from '../components.js';
 import { playerFor, ROLE_IDS } from '../../state.js';
 import { tx, nameOf, blurbOf, fieldOf, capLabel, launchClassLabel } from '../../i18n.js';
+import { satelliteSchematic } from '../satSchematic.js';
 
 const tabLabel = (id) => roleMeta(id).name;
 const lcl = (cls) => launchClassLabel(cls, LAUNCH_CLASS_LABEL[cls]);
@@ -410,6 +411,7 @@ export function renderDashboard(state, m, ctx, p) {
   const costDelta = p ? delta(p.cost.total - m.cost.total, 'M', 'down', 1, 0.05) : '';
 
   return `<div class="dash-inner">
+    ${satelliteSchematic(m, p)}
     <div class="dash-block budget-block">
       <div class="dash-row"><span class="dash-label">${icon('coins', { size: 16 })} ${tx('Budget', 'Anggaran')}</span>${statusPill(m.complete ? budgetTone : (c.total > c.cap ? 'nogo' : 'incomplete'))}</div>
       <div class="budget-big"><strong>${money(c.total)}</strong>${costDelta}<span class="muted"> ${tx('of', 'dari')} ${money(c.cap)}</span></div>
