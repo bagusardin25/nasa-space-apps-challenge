@@ -1,110 +1,144 @@
-# GO/NO-GO: The Space Mission Design Game
+# GO/NO-GO
 
-> Every choice has a cost. Can your team still launch?
+A space mission design game, made for the NASA Space Apps Challenge 2026 challenge
+"Space Mission Design Game" (Surabaya local event).
 
-Prototype for the **NASA Space Apps Challenge 2026: Space Mission Design Game**.
-Players design a complete space mission (objective → requirements → instruments → orbit → spacecraft → launch → ground segment), call a Go/No-Go poll, fly the mission through random events, and get a report that explains *why* the mission succeeded or failed.
+You pick a real problem, design a spacecraft to solve it, hold a launch poll with your team,
+and fly the mission. At the end the game tells you what went right, what went wrong, and why.
 
-## Run it
+**Play it:** https://go-no-go-mission.vercel.app (no login, works in any modern browser)
 
-No build step and no installed dependencies: it is plain HTML, CSS and JavaScript modules. The 3D flight view imports Three.js (r160) as a native ES module from a CDN (unpkg, with jsDelivr as a backup). If that fails (offline, blocked CDN, no WebGL), the game switches to its built-in 2D flight view, so it always runs.
+![Landing page](docs/screenshots/01-landing.png)
+
+## How a game works
+
+1. **Brief.** Choose a mission and a priority. The priority turns the goal into requirements,
+   for example "see the volcano at least once a day".
+2. **Design.** Four roles build the mission: Science picks instruments, Orbit & Launch picks the
+   orbit and rocket, Spacecraft builds the bus, and Ground & Comms gets the data home. Every
+   choice changes mass, power, budget, data, comms, lifetime and delta-v, and the dashboard shows
+   it right away.
+3. **Go/No-Go.** Each role reports GO, CAUTION or NO-GO. In team mode every player votes.
+4. **Flight.** Launch, reach orbit, and decide what to do when a solar storm, space debris or a
+   broken reaction wheel shows up.
+5. **Report.** A score, the cause of each problem, real NASA imagery of your target, and real
+   missions that made similar choices.
+
+| Mission brief | Design room |
+|---|---|
+| ![Mission brief](docs/screenshots/02-briefing.png) | ![Design room](docs/screenshots/03-design-room.png) |
+
+| Go/No-Go poll | Launch |
+|---|---|
+| ![Go/No-Go poll](docs/screenshots/04-go-no-go.png) | ![Launch](docs/screenshots/05-launch.png) |
+
+| In orbit | Mission report |
+|---|---|
+| ![In orbit](docs/screenshots/06-in-orbit.png) | ![Mission report](docs/screenshots/07-report.png) |
+
+## The missions
+
+- **Semeru Watch:** watch Semeru volcano in East Java for new heat, day and night.
+- **Archipelago Link:** relay messages from remote Indonesian islands on a tight budget.
+- **Lunar Ice Hunter:** reach the Moon and map hydrogen in the polar craters.
+- **Solar Sentinel:** sit at the Sun–Earth L1 point and warn Earth about solar storms.
+
+Each mission has two or three priorities, so the same mission can call for very different
+spacecraft. There is no single right answer.
+
+## What else is in it
+
+- Solo play, or a team of 2 to 4 players sharing one screen (or a screen share).
+- Three difficulty levels. Cadet marks good options as "Suggested" for beginners.
+- A guided tour on the first visit, and a Codex that explains 29 concepts in plain language.
+- English and Bahasa Indonesia. English is the default.
+- A 3D flight view built with Three.js. If WebGL or the CDN is not available, a 2D view is used.
+- Sound effects made in code, including Apollo-style "Quindar" tones. There is a mute button.
+- A link to share any design, and a local leaderboard.
+
+## How the numbers work
+
+The models are simple on purpose, so a game takes about 15 minutes, but they follow real physics:
+
+- orbital period from Kepler's third law, and eclipse length from orbit geometry
+- solar array size from the load plus battery recharge (the sizing method in *Space Mission
+  Analysis and Design*)
+- delta-v from the Tsiolkovsky rocket equation
+- battery wear from how deeply each eclipse drains it
+- revisit time from swath width and ground-track spacing
+
+Component masses, power and costs are rounded game values that keep real-world proportions.
+They are not engineering data.
+
+## NASA data and resources
+
+Used in the game:
+
+- Earth texture: NASA Blue Marble, from NASA GIBS
+- East Java image: Aqua MODIS true color, 20 July 2023, from NASA GIBS / Worldview
+- Indonesia at night: NASA Black Marble (VIIRS), from NASA GIBS
+- The Sun today: NASA SDO, AIA 193 Å (live image)
+- Moon texture and map: NASA SVS CGI Moon Kit, made from LRO LROC data
+
+The Earth and Moon textures are also stored in `assets/textures/`. The Moon copy is needed because
+the SVS server does not allow its images to be used in WebGL from another website.
+
+Resources that shaped the design:
+
+- *Design and Develop Science Missions* (NASA): the four mission segments became the four roles.
+- *Concept Maturity Levels* (NASA JPL): the path from objective to requirements to design review.
+- *Mission Design Lab* (NASA GSFC): the list of subsystems and the idea of quick trade studies.
+- *GMAT*: the same orbit physics, simplified.
+- *CubeSat 101* (NASA CSLI): CubeSat sizes, rideshare launches and small-mission risks.
+- *A Learning Game About Telescopes* (NASA Webb): showing similar real missions at the end.
+
+Space agency partners mentioned in the game: ISRO (PSLV, NISAR, Aditya-L1), ESA (SOHO, SMART-1,
+Ariane 6), JAXA (H3) and KASA (Danuri with NASA's ShadowCam). Indonesian missions LAPAN-A2 and
+SATRIA-1 also appear.
+
+## Run it locally
+
+There is no build step and nothing to install. You only need Python (for the small dev server)
+and, for the tests, Node 18 or newer.
 
 ```bash
 python serve.py
 ```
 
-Then open http://localhost:5173. (`serve.py` is a tiny static server with caching disabled. Any static server works, but ES modules do not load from `file://`.)
-
-Engine tests (Node 18+):
+Open http://localhost:5173. Opening `index.html` directly does not work, because browsers block
+JavaScript modules on `file://`.
 
 ```bash
 node tests/engine.test.js
 ```
 
-## Deploy (public link for judges)
+The tests check the mission model, the flight simulation, scoring and the translations.
 
-Upload this folder to any static host: GitHub Pages, Netlify, Vercel or Cloudflare Pages. There is no build command; the output directory is the folder itself. Then:
+## Deploy
 
-1. Open the public URL in a private window to confirm it works without a login.
-2. Optional, but recommended by the Space Apps submission guide: request a FortiGuard Web Filter classification for the domain.
+The site is hosted on Vercel (project `go-no-go-mission`) as plain static files.
 
-## What's in the game
+- A push to `main` updates the live site. Pushes to other branches create preview links.
+- To deploy by hand from this folder: `vercel --prod`.
+- `.vercelignore` keeps tests, the dev server and screenshots off the live site.
+- On the free plan a single upload can be up to 100 MB in total, so keep 3D models compressed.
 
-| Feature | Where |
-|---|---|
-| 4 scenarios × 2–3 mission priorities (priorities set the requirements) | `src/data/scenarios.js` |
-| 4 roles = NASA's 4 mission segments (Science/User, Orbit & Launch, Spacecraft, Ground & Comms) | `src/ui/screens/design.js` |
-| ~60 components: buses, 17 instruments, arrays, batteries, ADCS, propulsion, radios, networks, ops teams, launchers, 7 orbits | `src/data/catalog.js` |
-| Live budgets for mass, power, budget, data, comms, time and delta-v, with hover previews | `src/engine/mission.js` |
-| Explained issues ("Flight Director's notes") with codex links | `src/engine/mission.js` |
-| Go/No-Go poll (solo override, or a team vote) | `src/ui/screens/gonogo.js` |
-| Flight simulation with seeded random events and decisions | `src/engine/sim.js`, `src/data/events.js` |
-| Real-time 3D flight view (Three.js, procedural meshes only, no model files): launch pad with the chosen rocket (side boosters, strap-ons), particle exhaust, textured Earth/Moon, orbits at their real inclination, a gold-foil satellite with deploying arrays; 2D fallback | `src/ui/flightCanvas.js`, `src/ui/flightCanvas2d.js` |
-| Scoring, post-mission analysis, real NASA imagery, analog missions, local leaderboard | `src/engine/score.js`, `src/ui/screens/report.js` |
-| Mission Codex: 29 concepts in plain language | `src/data/codex.js` |
-| Difficulty: Cadet / Engineer / Flight Director | `src/data/scenarios.js` (`DIFFICULTIES`) |
-| Shareable design links (`#mission=...`) | `src/state.js` |
-| English / Bahasa Indonesia toggle (EN default, saved per browser) | `src/i18n.js`, `src/data/i18n-id.js`, `idn` fields in scenarios, `CODEX_ID` |
-| Synthesized sound: countdown beeps, liftoff rumble, alert klaxon, Apollo "Quindar" tones, radio static (mute button) | `src/ui/audio.js` |
-| Live spacecraft schematic in the design room: an SVG blueprint that redraws as parts are picked (bus, solar wings, instruments, thrusters, antenna) and previews hovered options | `src/ui/satSchematic.js` |
-| Mission-control telemetry in flight: strip charts for science and fuel, plus subsystem warning lights that blink during anomalies and explain themselves when selected | `src/ui/screens/flight.js` |
-| Flight recorder in the report: science and fuel over time with a marker for every in-flight decision | `src/ui/flightChart.js` |
-| Beginner help: auto guided tour on first visit, "Start here" badge, plain-language section subtitles, Cadet "Suggested" options | `src/ui/tour.js`, `guide` designs in scenarios |
-
-### Bahasa Indonesia
-
-The submission language is English, so English is the default. The EN | ID switch in the top bar translates everything: screens, scenarios, component descriptions, Flight Director notes, events, the Codex and the report. Strings live next to their English version as `tx('English', 'Indonesia')`; catalog text lives in `src/data/i18n-id.js`. The language is locked during a flight and can be changed again on the report.
-
-### Physics models (simplified, explainable)
-
-Kepler's third law (period), cylindrical-shadow eclipse geometry, solar-array sizing with battery recharge (SMAD), Tsiolkovsky rocket equation, a Li-ion cycle-life curve, swath/revisit geometry, and inverse-square link scaling. Component numbers are rounded game values that keep real-world proportions; they are not engineering data.
-
-### Tuning the balance
-
-* Science targets per priority: `target` in `src/data/scenarios.js`.
-* Budgets and deadlines: `budget` and `deadline` per scenario.
-* Scoring weights and grade thresholds: `src/engine/score.js`.
-* After any change, run `node tests/engine.test.js`.
-
-## NASA data and resources used
-
-**Shaped the design** (from the challenge resources list):
-
-* *Design and Develop Science Missions* (NASA): the four mission segments → the four player roles.
-* *Concept Maturity Levels* (NASA JPL): objective → requirements → trade studies → point design → review.
-* *Mission Design Lab* (NASA GSFC): subsystem breakdown and the live trade-study approach.
-* *General Mission Analysis Tool (GMAT)*: the same Kepler physics for periods and eclipses (simplified).
-* *CubeSat 101* (NASA CSLI): CubeSat buses, rideshares and small-mission risks.
-* *A Learning Game About Telescopes* (NASA Webb): matching objectives to instruments, and showing similar real missions.
-* *NASA Mission Viz* and the 2023 VR challenge: inspiration for the orbit views.
-
-**Shown live in the game:**
-
-* NASA Blue Marble (Earth globe texture) via NASA GIBS WMS; a copy of the same image in `assets/textures/` is used when GIBS cannot be reached
-* NASA Aqua MODIS Corrected Reflectance (East Java, 20 July 2023) via GIBS / Worldview
-* NASA Black Marble (Suomi NPP VIIRS night lights) via GIBS
-* NASA SDO AIA 193 Å "latest" image (live Sun)
-* NASA SVS CGI Moon Kit color map (from LRO LROC), also used as the Moon texture. The texture is served from `assets/textures/` because the SVS server does not send the CORS header WebGL needs for images from another site
-
-**Partner agencies referenced:** ISRO (PSLV, NISAR, Aditya-L1), ESA (SOHO, SMART-1, Ariane 6), JAXA (H3), KASA (Danuri/KPLO with NASA ShadowCam), Indonesia (LAPAN-A2, SATRIA-1).
-
-## Use of AI (SI disclosure)
-
-Parts of this prototype's code and in-game text, including the Bahasa Indonesia translation, were drafted with an AI coding assistant and then reviewed and tested by the team. The game contains no AI-generated images, audio or video (all sounds are synthesized by code at runtime). **Team: review this statement before submission and update it to match exactly how you used AI.**
-
-No NASA logos, insignia or mission identifiers are used. This is not an official NASA product.
-
-## Project structure
+## Project layout
 
 ```
-index.html, styles.css      app shell and visual design
-serve.py                    no-cache dev server
-src/main.js                 state, routing, events
-src/state.js                share links, leaderboard
-src/i18n.js                 English / Bahasa Indonesia helpers
-src/engine/                 physics, mission model, simulation, scoring (pure JS, testable in Node)
-src/data/                   catalog, scenarios, events, codex
-src/ui/                     screens, components, 3D flight view (+ 2D fallback), overlays
-assets/textures/            NASA Earth and Moon textures (offline / CORS-safe copies)
-tests/engine.test.js        engine smoke tests
+index.html, styles.css   page shell and styles
+src/main.js              screens, state and events
+src/engine/              mission model, physics, flight simulation, scoring
+src/data/                parts catalog, missions, events, Codex, Indonesian text
+src/ui/                  screens, 3D and 2D flight views, schematic, tour, sound
+assets/                  favicon and NASA textures
+tests/                   engine tests
+docs/screenshots/        images used in this README
 ```
+
+## Use of AI
+
+Much of the code and text, including the Bahasa Indonesia translation, was written with help
+from an AI coding assistant (Claude), then reviewed, tested and edited by the team. The game has
+no AI-generated images, audio or video: the pictures come from NASA and the sounds are generated
+by code.
