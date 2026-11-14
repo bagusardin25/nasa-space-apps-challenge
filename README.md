@@ -132,6 +132,12 @@ node tests/engine.test.js
 
 The tests check the mission model, the flight simulation, scoring and the translations.
 
+**Offline.** The game keeps working without internet after the first visit: Three.js (r160,
+`assets/vendor/`), the IBM Plex fonts (`assets/fonts/`, SIL Open Font License) and the NASA
+textures are part of the site, and a service worker (`sw.js`, registered by `src/offline.js`)
+keeps a copy of every file. It is network-first, so while online you always get the newest
+files. If Three.js or WebGL is unavailable, the flight switches to its 2D view.
+
 ## Deploy
 
 The site is hosted on Vercel (project `go-no-go-mission`) as plain static files.
@@ -140,16 +146,18 @@ The site is hosted on Vercel (project `go-no-go-mission`) as plain static files.
 - To deploy by hand from this folder: `vercel --prod`.
 - `.vercelignore` keeps tests, the dev server and screenshots off the live site.
 - On the free plan a single upload can be up to 100 MB in total, so keep 3D models compressed.
+- When you release a new version, raise `VERSION` in `sw.js` so old offline copies are dropped.
 
 ## Project layout
 
 ```
 index.html, styles.css   page shell and styles
+sw.js, src/offline.js    offline support (service worker)
 src/main.js              screens, state and events
 src/engine/              mission model, physics, flight simulation, scoring
 src/data/                parts catalog, missions, events, Codex, Indonesian text
 src/ui/                  screens, 3D and 2D flight views, schematic, tour, sound
-assets/                  favicon and NASA textures
+assets/                  favicon, NASA textures, fonts and Three.js (so it works offline)
 tests/                   engine tests
 docs/screenshots/        images used in this README
 ```
