@@ -14,6 +14,7 @@ import { setLang } from '../src/i18n.js';
 import { satelliteSchematic } from '../src/ui/satSchematic.js';
 import { flightChart } from '../src/ui/flightChart.js';
 import { launchStack, launchStackPanel } from '../src/ui/launchStack.js';
+import { applyRoomAction, createRoom, rolesOf } from '../src/net/roomLogic.js';
 
 let passed = 0;
 function test(name, fn) {
@@ -352,6 +353,114 @@ test('the launch stack follows the rocket choice: rideshare, too heavy, too big,
   assert.ok(preview.preview && preview.rows[0][3], 'a hovered rocket is marked as a preview change');
   assert.equal(preview.hostId, 'lv-heavy');
   assert.ok(preview.labels.boost);
+});
+
+console.log('Online room');
+
+function onlineRoom() {
+  return createRoom({
+    hostId: 'host',
+    hostName: 'Dir',
+    mission: {
+      scenarioId: 'semeru',
+      priorityId: 'warning',
+      difficultyId: 'engineer',
+      teamName: 'Orbit',
+      design: getScenario('semeru').starter,
+    },
+  });
+}
+
+test('a new room keeps the mission the flight director already chose', () => {
+  const room = onlineRoom();
+  assert.equal(room.rev, 1);
+  assert.equal(room.screen, 'briefing');
+  assert.equal(room.scenarioId, 'semeru');
+  assert.equal(room.priorityId, 'warning');
+  assert.equal(room.teamName, 'Orbit');
+  assert.ok(room.design.bus);
+  assert.deepEqual(rolesOf(room, 'host').sort(), ['ground', 'launch', 'science', 'spacecraft']);
+});
+
+test('stations are exclusive, and the host only covers what nobody claimed', () => {
+  let room = onlineRoom();
+  room = applyRoomAction(room, { type: 'join', name: 'Sari' }, 'sari').room;
+  room = applyRoomAction(room, { type: 'vote', role: 'science', vote: 'go' }, 'host').room;
+  room = applyRoomAction(room, { type: 'claim', role: 'science' }, 'sari').room;
+  assert.deepEqual(rolesOf(room, 'sari'), ['science']);
+  assert.ok(!rolesOf(room, 'host').includes('science'));
+  assert.equal(room.votes.science, undefined);
+  assert.equal(applyRoomAction(room, { type: 'claim', role: 'science' }, 'host').error, 'taken');
+  const again = applyRoomAction(room, { type: 'join', name: 'Sari' }, 'sari');
+  assert.equal(again.room, room);
+});
+
+test('only the player who holds a station can change it, and a change clears the poll', () => {
+  let room = onlineRoom();
+  room = applyRoomAction(room, { type: 'join', name: 'Sari' }, 'sari').room;
+  room = applyRoomAction(room, { type: 'claim', role: 'science' }, 'sari').room;
+  const instrument = room.design.instruments[0];
+  assert.equal(applyRoomAction(room, { type: 'pick', group: 'instruments', id: instrument }, 'host').error, 'not-your-station');
+  room = applyRoomAction(room, { type: 'vote', role: 'launch', vote: 'go' }, 'host').room;
+  const picked = applyRoomAction(room, { type: 'pick', group: 'instruments', id: instrument }, 'sari');
+  assert.ok(!picked.room.design.instruments.includes(instrument));
+  assert.equal(picked.room.votes.launch, undefined);
+  assert.equal(applyRoomAction(room, { type: 'vote', role: 'science', vote: 'go' }, 'host').error, 'not-your-station');
+  assert.equal(applyRoomAction(picked.room, { type: 'vote', role: 'science', vote: 'maybe' }, 'sari').error, 'bad-vote');
+});
+
+test('a fifth player is refused, and leaving gives the station back', () => {
+  let room = onlineRoom();
+  for (const id of ['a', 'b', 'c']) room = applyRoomAction(room, { type: 'join', name: id }, id).room;
+  assert.equal(room.peers.length, 4);
+  assert.equal(applyRoomAction(room, { type: 'join', name: 'e' }, 'e').error, 'full');
+  room = applyRoomAction(room, { type: 'claim', role: 'ground' }, 'a').room;
+  room = applyRoomAction(room, { type: 'vote', role: 'ground', vote: 'nogo' }, 'a').room;
+  room = applyRoomAction(room, { type: 'release', role: 'ground' }, 'a').room;
+  assert.equal(room.votes.ground, undefined);
+  assert.ok(rolesOf(room, 'host').includes('ground'));
+  room = applyRoomAction(room, { type: 'leave' }, 'a').room;
+  assert.ok(!room.peers.some((p) => p.id === 'a'));
+  assert.equal(applyRoomAction(room, { type: 'leave' }, 'host').closed, true);
+});
+
+test('mission setup and the poll screen belong to the flight director', () => {
+  let room = onlineRoom();
+  room = applyRoomAction(room, { type: 'join', name: 'Sari' }, 'sari').room;
+  assert.equal(applyRoomAction(room, { type: 'scenario', id: 'lunar', priorityId: 'ice' }, 'sari').error, 'host-only');
+  assert.equal(applyRoomAction(room, { type: 'scenario', id: 'not-a-mission', priorityId: 'x' }, 'host').error, 'bad-screen');
+  room = applyRoomAction(room, { type: 'vote', role: 'science', vote: 'go' }, 'host').room;
+  const moved = applyRoomAction(room, { type: 'screen', screen: 'gonogo' }, 'host');
+  assert.equal(moved.room.screen, 'gonogo');
+  assert.equal(moved.room.votes.science, 'go');
+  assert.equal(applyRoomAction(room, { type: 'screen', screen: 'flight' }, 'host').error, 'bad-screen');
+  const revised = applyRoomAction(moved.room, { type: 'screen', screen: 'design', clearVotes: true }, 'host');
+  assert.equal(revised.room.screen, 'design');
+  assert.equal(revised.room.votes.science, undefined);
+  const reset = applyRoomAction(room, { type: 'scenario', id: 'lunar', priorityId: 'ice' }, 'host');
+  assert.equal(reset.room.scenarioId, 'lunar');
+  assert.equal(reset.room.screen, 'briefing');
+  assert.equal(reset.room.design.instruments.length, 0);
+});
+
+test('launch waits for four GO votes, and flight choices stay in order', () => {
+  let room = onlineRoom();
+  assert.equal(applyRoomAction(room, { type: 'launch', seed: 7 }, 'host').error, 'not-ready');
+  for (const role of ['science', 'launch', 'spacecraft', 'ground']) {
+    room = applyRoomAction(room, { type: 'vote', role, vote: 'go' }, 'host').room;
+  }
+  room = applyRoomAction(room, { type: 'join', name: 'Sari' }, 'sari').room;
+  assert.equal(applyRoomAction(room, { type: 'launch', seed: 7 }, 'sari').error, 'host-only');
+  room = applyRoomAction(room, { type: 'launch', seed: 7 }, 'host').room;
+  assert.equal(room.screen, 'flight');
+  assert.equal(room.seed, 7);
+  assert.equal(room.decisions.length, 0);
+  room = applyRoomAction(room, { type: 'choice', eventId: 'debris', optionId: 'dodge', index: 0 }, 'host').room;
+  assert.equal(applyRoomAction(room, { type: 'choice', eventId: 'wheel', optionId: 'safe', index: 0 }, 'host').error, 'stale');
+  room = applyRoomAction(room, { type: 'choice', eventId: 'wheel', optionId: 'safe', index: 1 }, 'host').room;
+  assert.deepEqual(room.decisions.map((d) => d.optionId), ['dodge', 'safe']);
+  assert.equal(applyRoomAction(room, { type: 'choice', eventId: 'mystery', optionId: 'a', index: 2 }, 'sari').error, 'host-only');
+  assert.equal(applyRoomAction(room, { type: 'choice', eventId: 'debris', optionId: 'a', index: 2 }, 'sari').error, 'not-your-station');
 });
 
 console.log(`\n${passed} passed${process.exitCode ? ', some FAILED' : ''}`);
