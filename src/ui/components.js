@@ -49,7 +49,7 @@ export function topBar(state, ctx, current) {
   const mission = ctx
     ? `<div class="tb-mission"><span class="tb-icon" style="--accent:${ctx.scenario.accent}">${icon(ctx.scenario.icon, { size: 18 })}</span>
         <span class="tb-text"><span class="tb-name">${esc(ctx.scenario.name)}</span>
-        <span class="tb-sub">${esc(loc(ctx.priority, 'name'))} · ${esc(loc(ctx.difficulty, 'name'))}${state.mode === 'team' && state.teamName ? ` · ${tx('Team', 'Tim')} ${esc(state.teamName)}` : ''}</span></span></div>`
+        <span class="tb-sub">${esc(loc(ctx.priority, 'name'))} · ${esc(loc(ctx.difficulty, 'name'))}${state.mode !== 'solo' && state.teamName ? ` · ${tx('Team', 'Tim')} ${esc(state.teamName)}` : ''}</span></span></div>`
     : '';
   return `<header class="topbar">
     <button class="brand" type="button" data-action="home" aria-label="${tx('GO/NO-GO home', 'Beranda GO/NO-GO')}">${brandMark(26)}<span class="brand-name">GO/NO-GO</span></button>

@@ -6,6 +6,7 @@ import { esc, money } from '../util.js';
 import { brandMark, topBar, concept, prefTools, roleMeta, statusPill } from '../components.js';
 import { leaderboard } from '../../state.js';
 import { tx, loc } from '../../i18n.js';
+import { renderOnlineSetup } from './online.js';
 
 export function renderTitle() {
   const station = (id, status, note) => {
@@ -67,6 +68,7 @@ export function renderTitle() {
     'Pilih masalah nyata: memantau erupsi Semeru, menghubungkan pulau terpencil, mencari es di Bulan, atau memperingatkan Bumi akan badai Matahari. Rancang wahananya, gelar poll peluncuran, terbangkan misinya, lalu baca dengan jelas kenapa misi itu berhasil atau gagal.')}</p>
           <div class="lp-cta">
             <button type="button" class="btn btn-primary btn-lg" data-action="go" data-screen="scenarios" data-focus="start">${icon('play')}<span>${tx('Start a mission', 'Mulai misi')}</span></button>
+            <button type="button" class="btn btn-secondary btn-lg" data-action="go" data-screen="lobby">${icon('users')}<span>${tx('Join a room', 'Masuk ke ruang')}</span></button>
             <button type="button" class="btn btn-secondary btn-lg" data-action="howto">${icon('info')}<span>${tx('How to play', 'Cara bermain')}</span></button>
             <button type="button" class="lp-link" data-action="about">${tx('About & NASA sources', 'Tentang & sumber NASA')}</button>
           </div>
@@ -180,6 +182,8 @@ export function renderBriefing(state, ctx) {
   }).join('');
 
   const team = state.mode === 'team';
+  const online = state.mode === 'online';
+  const spectator = online && state.online?.phase === 'live' && !state.online.isHost;
   const players = Array.from({ length: state.playerCount }, (_, i) => `
     <label class="field"><span class="field-l">${tx('Player', 'Pemain')} ${i + 1}</span>
       <input type="text" maxlength="24" value="${esc(state.players[i])}" placeholder="${tx('Name', 'Nama')}" data-action="player-name" data-index="${i}" data-focus="player-${i}" autocomplete="off" /></label>`).join('');
@@ -193,7 +197,7 @@ export function renderBriefing(state, ctx) {
   }).join('');
 
   return `${topBar(state, ctx, 'briefing')}
-  <main class="page briefing" id="main">
+  <main class="page briefing ${spectator ? 'is-spectator' : ''}" id="main">
     <div class="brief-hero" style="--accent:${s.accent}">
       <span class="sc-patch big">${icon(s.icon, { size: 44 })}</span>
       <div>
@@ -213,9 +217,11 @@ export function renderBriefing(state, ctx) {
     <section class="brief-step">
       <h2><span class="step-badge">2</span> ${tx('Who is flying?', 'Siapa yang menerbangkan?')}</h2>
       <div class="seg" role="group" aria-label="${tx('Play mode', 'Mode bermain')}">
-        <button type="button" class="seg-btn ${!team ? 'is-on' : ''}" aria-pressed="${!team}" data-action="mode" data-id="solo" data-focus="mode-solo">${icon('user')}<span>${tx('Solo: you lead all four roles', 'Solo: kamu memimpin keempat peran')}</span></button>
-        <button type="button" class="seg-btn ${team ? 'is-on' : ''}" aria-pressed="${team}" data-action="mode" data-id="team" data-focus="mode-team">${icon('users')}<span>${tx('Team: 2 to 4 players', 'Tim: 2 sampai 4 pemain')}</span></button>
+        <button type="button" class="seg-btn ${state.mode === 'solo' ? 'is-on' : ''}" aria-pressed="${state.mode === 'solo'}" data-action="mode" data-id="solo" data-focus="mode-solo">${icon('user')}<span>${tx('Solo: you lead all four roles', 'Solo: kamu memimpin keempat peran')}</span></button>
+        <button type="button" class="seg-btn ${team ? 'is-on' : ''}" aria-pressed="${team}" data-action="mode" data-id="team" data-focus="mode-team">${icon('users')}<span>${tx('Same screen: 2 to 4 players', 'Satu layar: 2 sampai 4 pemain')}</span></button>
+        <button type="button" class="seg-btn ${online ? 'is-on' : ''}" aria-pressed="${online}" data-action="mode" data-id="online" data-focus="mode-online">${icon('signal')}<span>${tx('Online: each player, own screen', 'Daring: tiap pemain, layar sendiri')}</span></button>
       </div>
+      ${online ? renderOnlineSetup(state) : ''}
       ${team ? `<div class="team-setup">
         <div class="team-row">
           <label class="field"><span class="field-l">${tx('Team name', 'Nama tim')}</span><input type="text" maxlength="28" value="${esc(state.teamName)}" placeholder="${tx('e.g. Orbit Rangers', 'mis. Orbit Rangers')}" data-action="team-name" data-focus="team-name" autocomplete="off" /></label>
@@ -237,7 +243,9 @@ export function renderBriefing(state, ctx) {
     <div class="brief-cta">
       <label class="check"><input type="checkbox" data-action="use-starter" ${state.useStarter ? 'checked' : ''} data-focus="use-starter" />
         <span>${tx('Start from a starter design', 'Mulai dari desain awal')} <span class="muted">${tx('(it works, but has flaws to find and fix)', '(bisa terbang, tapi ada kelemahan untuk ditemukan dan diperbaiki)')}</span></span></label>
-      <button type="button" class="btn btn-primary btn-lg" data-action="enter-design" data-focus="enter-design">${icon('right')}<span>${tx('Enter the design room', 'Masuk ruang desain')}</span></button>
+      <button type="button" class="btn btn-primary btn-lg" data-action="enter-design" data-focus="enter-design" ${spectator || (online && state.online?.phase !== 'live') ? 'disabled' : ''}>${icon('right')}<span>${spectator
+    ? tx('Waiting for the flight director', 'Menunggu flight director')
+    : tx('Enter the design room', 'Masuk ruang desain')}</span></button>
     </div>
   </main>`;
 }

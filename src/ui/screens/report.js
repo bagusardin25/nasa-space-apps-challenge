@@ -35,7 +35,9 @@ export function renderReport(state, m, ctx) {
     </li>`;
   }).join('');
 
-  const team = state.mode === 'team'
+  const online = state.mode === 'online' && state.online?.phase === 'live';
+  const lead = !online || state.online.isHost;
+  const team = state.mode === 'team' || state.mode === 'online'
     ? `<section class="card">
         <h2 class="card-h">${icon('users')} ${tx('Team role goals', 'Target peran tim')}</h2>
         <ul class="objectives">${r.objectives.map((x) => `<li class="${x.met ? 'is-met' : ''}">
@@ -86,8 +88,8 @@ export function renderReport(state, m, ctx) {
         </div>
       </div>
       <div class="rh-actions">
-        <button type="button" class="btn btn-primary" data-action="revise" data-focus="revise">${icon('refresh')}<span>${tx('Revise this design', 'Revisi desain ini')}</span></button>
-        <button type="button" class="btn btn-secondary" data-action="refly" data-focus="refly">${icon('rocket')}<span>${tx('Fly it again', 'Terbangkan lagi')}</span></button>
+        <button type="button" class="btn btn-primary" data-action="revise" data-focus="revise" ${lead ? '' : 'disabled'}>${icon('refresh')}<span>${tx('Revise this design', 'Revisi desain ini')}</span></button>
+        <button type="button" class="btn btn-secondary" data-action="refly" data-focus="refly" ${lead ? '' : 'disabled'}>${icon('rocket')}<span>${tx('Fly it again', 'Terbangkan lagi')}</span></button>
         <button type="button" class="btn btn-ghost" data-action="share">${icon('link')}<span>${tx('Copy design link', 'Salin tautan desain')}</span></button>
         <button type="button" class="btn btn-ghost" data-action="go" data-screen="scenarios">${icon('layers')}<span>${tx('Another mission', 'Misi lain')}</span></button>
       </div>

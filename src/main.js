@@ -2,14 +2,16 @@
 import { computeMission, autoPropellant, normalizeDesign, EMPTY_DESIGN } from './engine/mission.js';
 import { createFlight, hashString } from './engine/sim.js';
 import { scoreMission } from './engine/score.js';
-import { get } from './data/catalog.js';
 import { getScenario } from './data/scenarios.js';
-import { initialState, ctxOf, shareUrl, readShareHash, saveRun, ROLE_IDS } from './state.js';
+import { initialState, ctxOf, shareUrl, readShareHash, saveRun, ROLE_IDS, isSharedTeam } from './state.js';
+import { applyPick } from './ui/picks.js';
 import { renderTitle, renderScenarios, renderBriefing } from './ui/screens/intro.js';
+import { renderLobby, renderNetBar, roomLink } from './ui/screens/online.js';
 import { renderDesign, renderDashboard } from './ui/screens/design.js';
 import { renderGoNoGo } from './ui/screens/gonogo.js';
 import { renderFlight, mountFlight } from './ui/screens/flight.js';
 import { renderReport } from './ui/screens/report.js';
+import { roleMeta } from './ui/components.js';
 import { openCodex, openHowTo, openAbout, closeOverlays, overlayOpen, toast, trapFocus } from './ui/overlays.js';
 import { preloadTextures } from './ui/flightCanvas.js';
 import { launchStack } from './ui/launchStack.js';
@@ -18,6 +20,8 @@ import { startTour, tourSeen, endTour, tourActive } from './ui/tour.js';
 import { play, setMuted, isMuted } from './ui/audio.js';
 import { smart } from './ui/util.js';
 import { tx, nameOf, getLang, setLang } from './i18n.js';
+import * as session from './net/session.js';
+import { EVENT_ROLE, rolesOf } from './net/roomLogic.js';
 
 const app = document.getElementById('app');
 let state = initialState();
@@ -45,6 +49,7 @@ function render(opts = {}) {
   let designMetrics = null;
   let title = tx('GO/NO-GO · Space Mission Design Game', 'GO/NO-GO · Game Desain Misi Antariksa');
   switch (state.screen) {
+    case 'lobby': html = renderLobby(state); title = tx('Join a room · GO/NO-GO', 'Masuk ke ruang · GO/NO-GO'); break;
     case 'title': html = renderTitle(state); break;
     case 'scenarios': html = renderScenarios(state); title = tx('Choose a mission · GO/NO-GO', 'Pilih misi · GO/NO-GO'); break;
     case 'briefing': html = renderBriefing(state, ctx); title = `${ctx.scenario.name} · Brief · GO/NO-GO`; break;
@@ -55,13 +60,17 @@ function render(opts = {}) {
     default: html = renderTitle(state);
   }
   document.title = title;
-  app.innerHTML = html;
+  app.innerHTML = `${renderNetBar(state)}${html}`;
   lastScreen = state.screen;
   if (designMetrics) syncStack(designMetrics);
   else disposeRocketView();
 
   if (state.screen === 'flight' && !flightCtl) {
-    flightCtl = mountFlight(app, { state, m: state.flightMetrics, ctx, onFinish: finishFlight });
+    flightCtl = mountFlight(app, {
+      state, m: state.flightMetrics, ctx, onFinish: finishFlight,
+      link: state.mode === 'online' ? flightLink() : null,
+    });
+    if (state.mode === 'online') flightCtl.setDecisions(state.onlineDecisions);
   }
   if (state.screen === 'report') {
     app.querySelectorAll('img[data-fallback]').forEach((img) => img.addEventListener('error', () => {
@@ -115,56 +124,6 @@ function go(screen, opts) {
 }
 
 // ---------------- Design changes ----------------
-function applyPick(design, group, id, { silent = false } = {}) {
-  const d = normalizeDesign(design);
-  const notes = [];
-  const ctx = ctxOf(state);
-  if (group === 'instruments') {
-    const has = d.instruments.includes(id);
-    if (has) d.instruments = d.instruments.filter((x) => x !== id);
-    else d.instruments.push(id);
-  } else if (group === 'bus') {
-    d.bus = id;
-    const bus = get('buses', id);
-    const bn = nameOf(bus);
-    const solar = get('solar', d.solar);
-    if (solar && !solar.byBus[id]) { notes.push(tx(`${nameOf(solar)} removed: not made for a ${bn}.`, `${nameOf(solar)} dilepas: tidak dibuat untuk ${bn}.`)); d.solar = null; }
-    const bat = get('batteries', d.battery);
-    if (bat && !bat.buses.includes(id)) { notes.push(tx(`${nameOf(bat)} removed: not offered for a ${bn}.`, `${nameOf(bat)} dilepas: tidak tersedia untuk ${bn}.`)); d.battery = null; }
-    const prop = get('propulsion', d.propulsion);
-    if (prop?.buses && !prop.buses.includes(id)) { notes.push(tx(`${nameOf(prop)} removed: too big for a ${bn}.`, `${nameOf(prop)} dilepas: terlalu besar untuk ${bn}.`)); d.propulsion = null; d.propellant = 0; }
-    const radio = get('radios', d.radio);
-    if (radio?.buses && !radio.buses.includes(id)) { notes.push(tx(`${nameOf(radio)} removed: needs a bigger spacecraft.`, `${nameOf(radio)} dilepas: butuh wahana lebih besar.`)); d.radio = null; }
-    const keep = d.instruments.filter((x) => bus.sizes.includes(get('instruments', x).size));
-    const dropped = d.instruments.filter((x) => !keep.includes(x));
-    if (dropped.length) {
-      const names = dropped.map((x) => nameOf(get('instruments', x))).join(', ');
-      notes.push(tx(`${names} removed: too big for a ${bn}.`, `${names} dilepas: terlalu besar untuk ${bn}.`));
-    }
-    if (keep.length > bus.slots) notes.push(tx(`Only ${bus.slots} instrument slots: kept the first ${bus.slots}.`, `Hanya ${bus.slots} slot instrumen: ${bus.slots} yang pertama dipertahankan.`));
-    d.instruments = keep.slice(0, bus.slots);
-  } else if (group === 'propulsion') {
-    d.propulsion = id;
-    if (id === 'prop-none') d.propellant = 0;
-    else if (ctx && d.bus && d.orbit) {
-      const kgNeeded = autoPropellant(d, ctx);
-      d.propellant = kgNeeded;
-      if (!silent) notes.push(kgNeeded > 0
-        ? tx(`Propellant auto-sized to ${smart(kgNeeded)} kg for this mission's delta-v. Adjust it with the slider.`,
-          `Propelan otomatis diatur ${smart(kgNeeded)} kg sesuai delta-v misi ini. Atur dengan slider.`)
-        : tx('This orbit needs no maneuvers for the planned mission, so the tank starts empty. Add propellant with the slider if you want a reserve.',
-          'Orbit ini tidak butuh manuver untuk misi yang direncanakan, jadi tangki dimulai kosong. Tambah propelan dengan slider jika ingin cadangan.'));
-    }
-  } else {
-    d[group] = id;
-  }
-  // keep propellant within the tank
-  const prop = get('propulsion', d.propulsion);
-  const bus = get('buses', d.bus);
-  if (prop && bus) d.propellant = Math.min(d.propellant, prop.maxPropFrac * bus.maxMass);
-  return { design: d, notes };
-}
-
 function commitDesign(design, notes = []) {
   state.design = normalizeDesign(design);
   state.votes = {};
@@ -179,16 +138,177 @@ function loadStarter() {
   state.votes = {};
 }
 
+// ---------------- Online room ----------------
+const NET_ERRORS = {
+  full: () => tx('That room is full (4 players).', 'Ruang itu sudah penuh (4 pemain).'),
+  taken: () => tx('Another player already leads that station.', 'Pemain lain sudah memimpin stasiun itu.'),
+  'not-your-station': () => tx('That station is not yours.', 'Stasiun itu bukan milikmu.'),
+  'host-only': () => tx('Only the flight director can do that.', 'Hanya flight director yang bisa melakukan itu.'),
+  stale: () => tx('That decision was already made.', 'Keputusan itu sudah diambil.'),
+  missing: () => tx('No room with that code. Ask the flight director to check it.', 'Tidak ada ruang dengan kode itu. Minta flight director memeriksanya.'),
+  'no-broker': () => tx('Could not reach a room server. Check your connection and try again.', 'Tidak bisa menghubungi server ruang. Periksa koneksimu dan coba lagi.'),
+  'not-ready': () => tx('Every station must call GO before launch.', 'Setiap stasiun harus GO sebelum meluncur.'),
+  'not-in-room': () => tx('You are not in this room anymore.', 'Kamu sudah tidak ada di ruang ini.'),
+};
+
+function netMessage(code) {
+  return (NET_ERRORS[code] ?? (() => tx('That action was rejected.', 'Aksi itu ditolak.')))();
+}
+
+function flightLink() {
+  return {
+    canChoose(eventId) {
+      const role = EVENT_ROLE[eventId];
+      const mine = state.online.myRoles ?? [];
+      return role ? mine.includes(role) : state.online.isHost;
+    },
+    waitText(eventId) {
+      const role = EVENT_ROLE[eventId];
+      const title = role ? roleMeta(role).title : tx('the flight director', 'flight director');
+      return tx(`Waiting for ${title} to decide.`, `Menunggu ${title} memutuskan.`);
+    },
+    send(eventId, optionId, index) {
+      session.act({ type: 'choice', eventId, optionId, index });
+    },
+  };
+}
+
+function adoptRoom(next, notes = []) {
+  if (!next?.hostId || !getScenario(next.scenarioId)) return;
+  const prevSeed = state.flight?.seed;
+  state.design = normalizeDesign(next.design);
+  state.votes = next.votes ?? {};
+  state.scenarioId = next.scenarioId;
+  state.priorityId = next.priorityId;
+  state.difficultyId = next.difficultyId ?? 'engineer';
+  state.teamName = next.teamName ?? '';
+  state.onlineDecisions = next.decisions ?? [];
+  state.online = {
+    ...state.online,
+    phase: 'live',
+    hostId: next.hostId,
+    isHost: next.hostId === state.online.myId,
+    peers: next.peers,
+    myRoles: rolesOf(next, state.online.myId),
+    message: '',
+  };
+  if (next.screen === 'flight' && next.seed != null && prevSeed !== next.seed) {
+    const ctx = ctxOf(state);
+    const m = metrics();
+    state.overrides = 0;
+    state.cautions = 0;
+    state.flightMetrics = m;
+    state.flight = createFlight(m, ctx, next.seed);
+    state.result = null;
+    state.screen = 'flight';
+    render();
+    notes.forEach((n) => toast(n));
+    return;
+  }
+  if (next.screen === 'flight' && state.screen === 'flight') {
+    flightCtl?.setDecisions(state.onlineDecisions);
+    notes.forEach((n) => toast(n));
+    return;
+  }
+  state.screen = next.screen || state.screen;
+  previewKey = null;
+  render();
+  notes.forEach((n) => toast(n));
+}
+
+function onlineName() {
+  return state.online.myName.trim() || tx('Player', 'Pemain');
+}
+
+async function hostRoom() {
+  state.online.phase = 'connecting';
+  state.online.message = '';
+  state.online.myId = session.ensureId();
+  state.mode = 'online';
+  render();
+  try {
+    const opened = await session.host(onlineName(), {
+      scenarioId: state.scenarioId,
+      priorityId: state.priorityId,
+      difficultyId: state.difficultyId,
+      teamName: state.teamName,
+      design: state.design,
+    });
+    state.online.code = opened.code;
+    state.online.joinCode = opened.code;
+    history.replaceState(null, '', `${location.pathname}${location.search}#room=${opened.code}`);
+    adoptRoom(opened.room);
+  } catch {
+    session.leave();
+    state.online.phase = 'error';
+    state.online.message = netMessage('no-broker');
+    render();
+  }
+}
+
+async function joinRoom() {
+  const clean = state.online.joinCode.trim().toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
+  if (clean.length < 4) {
+    state.online.message = tx('Enter the room code.', 'Masukkan kode ruang.');
+    render();
+    return;
+  }
+  state.online.phase = 'connecting';
+  state.online.message = '';
+  state.online.code = clean;
+  state.online.joinCode = clean;
+  state.online.myId = session.ensureId();
+  state.mode = 'online';
+  history.replaceState(null, '', `${location.pathname}${location.search}#room=${clean}`);
+  render();
+  try {
+    await session.join(clean, onlineName());
+  } catch {
+    state.online.phase = 'error';
+    state.online.message = netMessage('no-broker');
+    render();
+  }
+}
+
+function leaveRoom() {
+  session.leave();
+  state.online = { ...initialState().online, myName: state.online.myName, joinCode: state.online.joinCode };
+  state.onlineDecisions = [];
+  if (location.hash.includes('room=')) history.replaceState(null, '', location.pathname + location.search);
+}
+
+session.configure({
+  ctx: () => ctxOf(state),
+  onRoom: (next, notes) => adoptRoom(next, notes),
+  onReject: (code) => toast(netMessage(code), 'bad'),
+  onClosed: () => {
+    leaveRoom();
+    toast(tx('The flight director closed the room.', 'Flight director menutup ruang.'), 'bad');
+    go('title');
+  },
+  onStatus: (phase, code) => {
+    if (phase === 'error') {
+      state.online.phase = 'error';
+      state.online.message = netMessage(code);
+      render();
+    }
+  },
+});
+
 // ---------------- Flight ----------------
 function launch() {
   const ctx = ctxOf(state);
   const m = metrics();
   if (!m.complete) return;
-  if (state.mode === 'team' && !ROLE_IDS.every((r) => state.votes[r] === 'go')) return;
-  state.overrides = state.mode === 'team' ? 0 : [...ROLE_IDS, 'mission'].filter((r) => m.roles[r].status === 'nogo').length;
-  state.cautions = state.mode === 'team' ? 0 : [...ROLE_IDS, 'mission'].filter((r) => m.roles[r].status === 'caution').length;
+  if (isSharedTeam(state) && !ROLE_IDS.every((r) => state.votes[r] === 'go')) return;
+  state.overrides = isSharedTeam(state) ? 0 : [...ROLE_IDS, 'mission'].filter((r) => m.roles[r].status === 'nogo').length;
+  state.cautions = isSharedTeam(state) ? 0 : [...ROLE_IDS, 'mission'].filter((r) => m.roles[r].status === 'caution').length;
   state.runCount += 1;
   const seed = (hashString(JSON.stringify(state.design) + state.scenarioId + state.priorityId + state.difficultyId) ^ Math.imul(state.runCount, 2654435761)) >>> 0;
+  if (state.mode === 'online') {
+    session.act({ type: 'launch', seed });
+    return;
+  }
   state.flightMetrics = m;
   state.flight = createFlight(m, ctx, seed);
   state.result = null;
@@ -198,13 +318,13 @@ function launch() {
 function finishFlight() {
   const ctx = ctxOf(state);
   const m = state.flightMetrics;
-  state.result = scoreMission(m, state.flight, ctx, { team: state.mode === 'team', overrides: state.overrides, cautions: state.cautions });
+  state.result = scoreMission(m, state.flight, ctx, { team: isSharedTeam(state), overrides: state.overrides, cautions: state.cautions });
   const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
   saveRun({
     id,
     scenarioId: state.scenarioId,
     priorityId: ctx.priority.id,
-    name: state.mode === 'team' ? (state.teamName.trim() || tx('Team', 'Tim')) : tx('Solo run', 'Main solo'),
+    name: isSharedTeam(state) ? (state.teamName.trim() || tx('Team', 'Tim')) : tx('Solo run', 'Main solo'),
     score: state.result.total,
     grade: state.result.grade.grade,
     outcome: state.result.outcome,
@@ -233,7 +353,7 @@ function runTour() {
 }
 
 // ---------------- Event handling ----------------
-app.addEventListener('click', (e) => {
+app.addEventListener('click', async (e) => {
   const el = e.target.closest('[data-action]');
   if (!el || !app.contains(el)) return;
   const a = el.dataset.action;
@@ -245,8 +365,30 @@ app.addEventListener('click', (e) => {
   }
   if (!['pick', 'vote', 'launch', 'refly', 'sound', 'propellant'].includes(a)) play('click');
   switch (a) {
-    case 'home': go('title'); break;
-    case 'go': go(el.dataset.screen); break;
+    case 'home':
+      if (state.online.phase === 'live' || state.online.phase === 'connecting') leaveRoom();
+      state.mode = state.mode === 'online' ? 'solo' : state.mode;
+      go('title');
+      break;
+    case 'go': {
+      const screen = el.dataset.screen;
+      const shared = ['briefing', 'design', 'gonogo'];
+      const live = state.mode === 'online' && (state.online.phase === 'live' || state.online.phase === 'connecting');
+      if (live && shared.includes(screen)) {
+        if (state.online.phase !== 'live' || !state.online.isHost) {
+          toast(netMessage('host-only'), 'bad');
+          break;
+        }
+        session.act({ type: 'screen', screen });
+        break;
+      }
+      if (live && ['title', 'scenarios', 'lobby'].includes(screen)) {
+        leaveRoom();
+        state.mode = 'solo';
+      }
+      go(screen);
+      break;
+    }
     case 'codex': openCodex(el.dataset.id ?? null); break;
     case 'howto': openHowTo({ canTour: state.screen === 'design', onTour: runTour }); break;
     case 'about': openAbout(); break;
@@ -258,7 +400,7 @@ app.addEventListener('click', (e) => {
       if (state.flightMetrics && state.flight?.done) {
         const ctx = ctxOf(state);
         state.flightMetrics = computeMission(state.flightMetrics.design, ctx);
-        if (state.result) state.result = scoreMission(state.flightMetrics, state.flight, ctx, { team: state.mode === 'team', overrides: state.overrides, cautions: state.cautions });
+        if (state.result) state.result = scoreMission(state.flightMetrics, state.flight, ctx, { team: isSharedTeam(state), overrides: state.overrides, cautions: state.cautions });
       }
       render({ focus: null });
       app.querySelector(`[data-action="lang"][data-id="${getLang()}"]`)?.focus({ preventScroll: true });
@@ -273,54 +415,119 @@ app.addEventListener('click', (e) => {
       break;
     }
     case 'pick-scenario': {
+      if (state.mode === 'online' && state.online.phase === 'live' && !state.online.isHost) break;
       const changed = state.scenarioId !== el.dataset.id;
+      const priorityId = changed ? getScenario(el.dataset.id).priorities[0].id : state.priorityId;
+      if (state.mode === 'online' && state.online.phase === 'live') {
+        session.act({ type: 'scenario', id: el.dataset.id, priorityId });
+        break;
+      }
       state.scenarioId = el.dataset.id;
       if (changed) {
-        state.priorityId = getScenario(state.scenarioId).priorities[0].id;
+        state.priorityId = priorityId;
         state.design = normalizeDesign(EMPTY_DESIGN);
         state.tab = 'science';
       }
       go('briefing');
       break;
     }
-    case 'priority': state.priorityId = el.dataset.id; render(); break;
-    case 'difficulty': state.difficultyId = el.dataset.id; render(); break;
-    case 'mode': state.mode = el.dataset.id; render(); break;
+    case 'priority':
+      if (state.mode === 'online' && state.online.phase === 'live') {
+        if (state.online.isHost) session.act({ type: 'priority', id: el.dataset.id });
+        break;
+      }
+      state.priorityId = el.dataset.id; render(); break;
+    case 'difficulty':
+      if (state.mode === 'online' && state.online.phase === 'live') {
+        if (state.online.isHost) session.act({ type: 'difficulty', id: el.dataset.id });
+        break;
+      }
+      state.difficultyId = el.dataset.id; render(); break;
+    case 'mode':
+      if (state.online.phase === 'live' || state.online.phase === 'connecting') leaveRoom();
+      state.mode = el.dataset.id;
+      render();
+      break;
     case 'enter-design': {
+      if (state.mode === 'online' && state.online.phase === 'live' && !state.online.isHost) break;
       const empty = !state.design.bus && !state.design.orbit && !state.design.instruments.length;
       if (state.useStarter && empty) loadStarter();
+      if (state.mode === 'online' && state.online.phase === 'live') {
+        session.act({ type: 'enter', design: state.design });
+        break;
+      }
       go('design');
       break;
     }
     case 'tab': state.tab = el.dataset.tab; previewKey = null; render({ focus: `tab-${state.tab}` }); app.querySelector('.design-main')?.scrollIntoView({ block: 'start' }); break;
     case 'pick': {
       const selected = el.getAttribute('aria-pressed') === 'true';
-      const res = applyPick(state.design, el.dataset.group, el.dataset.id);
       play(selected && el.dataset.group === 'instruments' ? 'deselect' : 'select');
+      if (state.mode === 'online' && state.online.phase === 'live') {
+        session.act({ type: 'pick', group: el.dataset.group, id: el.dataset.id });
+        break;
+      }
+      const res = applyPick(state.design, el.dataset.group, el.dataset.id, { ctx: ctxOf(state) });
       commitDesign(res.design, res.notes);
       break;
     }
     case 'count': {
+      if (state.mode === 'online' && state.online.phase === 'live') {
+        session.act({ type: 'pick', group: 'count', delta: Number(el.dataset.delta) });
+        break;
+      }
       const d = normalizeDesign(state.design);
       d.count = Math.max(1, Math.min(8, d.count + Number(el.dataset.delta)));
       commitDesign(d);
       break;
     }
     case 'autoprop': {
+      if (state.mode === 'online' && state.online.phase === 'live') {
+        session.act({ type: 'autoprop' });
+        break;
+      }
       const d = normalizeDesign(state.design);
       d.propellant = autoPropellant(d, ctxOf(state));
       commitDesign(d, [tx(`Propellant set to ${smart(d.propellant)} kg.`, `Propelan diatur ${smart(d.propellant)} kg.`)]);
       break;
     }
+    case 'net-host': hostRoom(); break;
+    case 'net-join': joinRoom(); break;
+    case 'net-leave': leaveRoom(); go(state.screen === 'lobby' ? 'title' : 'briefing'); break;
+    case 'net-claim': session.act({ type: 'claim', role: el.dataset.role }); break;
+    case 'net-release': session.act({ type: 'release', role: el.dataset.role }); break;
+    case 'net-copy': {
+      const url = roomLink(state.online.code || state.online.joinCode);
+      try {
+        await navigator.clipboard.writeText(url);
+        toast(tx('Room link copied.', 'Tautan ruang disalin.'), 'good');
+      } catch {
+        window.prompt(tx('Copy this room link:', 'Salin tautan ruang ini:'), url);
+      }
+      break;
+    }
     case 'gauge': state.openGauge = state.openGauge === el.dataset.id ? null : el.dataset.id; renderDash(); break;
     case 'stack-view': state.stackView = el.dataset.id; renderDash(); break;
-    case 'starter': loadStarter(); render(); toast(tx('Starter design loaded. It flies, but look for its flaws.', 'Desain awal dimuat. Bisa terbang, tapi cari kelemahannya.')); break;
-    case 'reset-design': state.design = normalizeDesign(EMPTY_DESIGN); state.votes = {}; render(); toast(tx('Design cleared.', 'Desain dikosongkan.')); break;
+    case 'starter':
+      if (state.mode === 'online' && !state.online.isHost) break;
+      loadStarter();
+      if (state.mode === 'online' && state.online.phase === 'live') session.act({ type: 'design', design: state.design });
+      else { render(); toast(tx('Starter design loaded. It flies, but look for its flaws.', 'Desain awal dimuat. Bisa terbang, tapi cari kelemahannya.')); }
+      break;
+    case 'reset-design':
+      if (state.mode === 'online' && !state.online.isHost) break;
+      if (state.mode === 'online' && state.online.phase === 'live') session.act({ type: 'design', design: normalizeDesign(EMPTY_DESIGN) });
+      else { state.design = normalizeDesign(EMPTY_DESIGN); state.votes = {}; render(); toast(tx('Design cleared.', 'Desain dikosongkan.')); }
+      break;
     case 'share': copyShare(); break;
     case 'vote': {
+      play(el.dataset.vote === 'go' ? 'go' : 'nogo');
+      if (state.mode === 'online' && state.online.phase === 'live') {
+        session.act({ type: 'vote', role: el.dataset.role, vote: el.dataset.vote });
+        break;
+      }
       state.votes = { ...state.votes, [el.dataset.role]: el.dataset.vote };
-      const allGo = ROLE_IDS.every((r) => state.votes[r] === 'go');
-      play(allGo ? 'allGo' : el.dataset.vote === 'go' ? 'go' : 'nogo');
+      if (ROLE_IDS.every((r) => state.votes[r] === 'go')) play('allGo');
       render();
       break;
     }
@@ -329,7 +536,12 @@ app.addEventListener('click', (e) => {
     case 'flight-speed': flightCtl?.cycleSpeed(); break;
     case 'flight-skip': flightCtl?.skip(); break;
     case 'to-report': go('report'); break;
-    case 'revise': state.votes = {}; go('design'); break;
+    case 'revise':
+      if (state.mode === 'online' && state.online.phase === 'live') {
+        if (state.online.isHost) session.act({ type: 'screen', screen: 'design', clearVotes: true });
+        break;
+      }
+      state.votes = {}; go('design'); break;
     case 'refly': launch(); break;
     default: break;
   }
@@ -339,18 +551,27 @@ app.addEventListener('input', (e) => {
   const el = e.target;
   const a = el.dataset.action;
   if (a === 'propellant') {
+    if (state.mode === 'online' && state.online.phase === 'live' && !state.online.myRoles?.includes('spacecraft')) return;
     state.design = { ...state.design, propellant: Number(el.value) };
     const out = el.closest('.prop-panel')?.querySelector('output');
     if (out) out.textContent = `${smart(Number(el.value))} kg`;
     renderDash();
   } else if (a === 'team-name') state.teamName = el.value;
   else if (a === 'player-name') state.players[Number(el.dataset.index)] = el.value;
+  else if (a === 'net-name') state.online.myName = el.value;
+  else if (a === 'net-code') state.online.joinCode = el.value.toUpperCase();
 });
 
 app.addEventListener('change', (e) => {
   const el = e.target;
   const a = el.dataset.action;
-  if (a === 'propellant') { state.votes = {}; render({ focus: 'propellant' }); }
+  if (a === 'propellant') {
+    if (state.mode === 'online' && state.online.phase === 'live') session.act({ type: 'pick', group: 'propellant', value: Number(el.value) });
+    else { state.votes = {}; render({ focus: 'propellant' }); }
+  } else if (a === 'net-name' && state.online.phase === 'live') session.act({ type: 'name', name: state.online.myName });
+  else if (a === 'team-name' && state.mode === 'online' && state.online.phase === 'live' && state.online.isHost) {
+    session.act({ type: 'team-name', name: state.teamName });
+  }
   else if (a === 'player-count') {
     state.playerCount = Number(el.value);
     ROLE_IDS.forEach((r, i) => { state.roleAssign[r] = i % state.playerCount; });
@@ -373,7 +594,7 @@ function schedulePreview(key) {
     if (state.screen !== 'design') return;
     if (!previewKey) { renderDash(); return; }
     const [group, id] = previewKey.split(':');
-    const res = applyPick(state.design, group, id, { silent: true });
+    const res = applyPick(state.design, group, id, { silent: true, ctx: ctxOf(state) });
     renderDash(JSON.stringify(res.design) === JSON.stringify(state.design) ? null : res.design);
   });
 }
@@ -422,6 +643,13 @@ const shared = readShareHash();
 if (shared) {
   state = { ...state, ...shared, screen: 'design', useStarter: false };
   toast(tx('Shared design loaded.', 'Desain yang dibagikan dimuat.'));
+} else {
+  const roomCode = location.hash.match(/^#room=([A-Za-z0-9]{4,8})/)?.[1];
+  if (roomCode) {
+    state.online.joinCode = roomCode.toUpperCase().slice(0, 6);
+    state.screen = 'lobby';
+    state.mode = 'online';
+  }
 }
 preloadTextures();
 render();
