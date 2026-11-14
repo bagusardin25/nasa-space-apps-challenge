@@ -127,6 +127,8 @@ export function createFlightView(canvas, opts) {
 }
 
 // Launcher silhouettes (scene units ≈ 4.5 m). Rideshare payloads fly on a medium-heavy host rocket.
+/** Ascent timeline in seconds after the pad scene ends (compressed: the real climb takes about nine minutes). */
+export const ASCENT = { boost: 0.6, meco: 1.5, stage: 1.75, ignite: 2.2, fairing: 3.1, seco: 4.8, release: 5.15, end: 6.1 };
 export const ROCKETS = {
   'lv-small': { r: 0.42, body: 7.6, fair: 1.9, fairR: 0.46, dark: true, strapons: 0, sideCores: 0 },
   'lv-medium': { r: 0.55, body: 9.4, fair: 2.5, fairR: 0.66, dark: false, strapons: 6, sideCores: 0 },
@@ -1501,7 +1503,6 @@ function createFlightView3D(THREE, canvas, opts, textures, state) {
             rk.group.position.set(alt * Math.tan(pitch) * 0.45, baseY + alt, 0);
             rk.group.rotation.z = -pitch;
             rocketVel.set(Math.sin(pitch), Math.cos(pitch), 0).multiplyScalar(vy);
-            for (const b of rk.boosters) if (!b.free && tl > b.sepAt) separate(b, vy);
           }
           for (const b of rk.boosters) {
             if (!b.free) continue;
@@ -1651,7 +1652,7 @@ function createFlightView3D(THREE, canvas, opts, textures, state) {
       mesh(G.cyl(R.fairR, R.fairR, fairCyl, 48, 1, true), plain, g, 0, R.body + 0.35 + fairCyl / 2, 0);
       mesh(ogive(R.fairR, R.fair - fairCyl), plain, g, 0, R.body + 0.35 + fairCyl, 0);
 
-      // Strap-on solid boosters (medium launcher), dropped at about T+1.9 s in this compressed timeline.
+      // Strap-on solid boosters (medium launcher). They stay on through the pad scene and drop in the ascent scene.
       for (let k = 0; k < R.strapons; k++) {
         const a = (k * Math.PI) / 3 + Math.PI / 6;
         const out = V(Math.cos(a), 0, Math.sin(a));
@@ -1682,6 +1683,233 @@ function createFlightView3D(THREE, canvas, opts, textures, state) {
         boosters.push({ group: bg, out, sepAt: 2.45, free: false });
       }
       return { group: g, nozzles, core, boosters, plumeLevel, nozzleMat };
+    }
+
+    // =====================================================================
+    // Scene: ascent (above the atmosphere: staging, fairing jettison, spacecraft separation)
+    // =====================================================================
+    function buildAscent() {
+      const root = group(scene);
+      const R = ROCKETS[launcher?.id] ?? ROCKETS['lv-mediumheavy'];
+      const SUN = V(-0.35, 0.55, 0.75).normalize();
+      const ER = 90;
+      const earth = makePlanet(root, 'earth', ER);
+      // Start over East Java and let the ground slide back as the rocket gains speed downrange.
+      earth.root.quaternion.setFromUnitVectors(latLon(-7.5, 112, 1), Y);
+      const Z = V(0, 0, 1);
+
+      const L1 = Math.min(6.2, R.body * 0.58);
+      const L2 = Math.max(1.9, R.body * 0.23);
+      const light = R.dark ? 0x23262e : 0xeef2f8;
+      const skin = std({ color: light, roughness: 0.42, metalness: 0.1, envMapIntensity: 0.5 });
+      const shell = std({ color: light, roughness: 0.45, metalness: 0.1, envMapIntensity: 0.5, side: THREE.DoubleSide });
+      const dark = std({ color: 0x23262d, roughness: 0.5, metalness: 0.55 });
+      const nozzleMat = std({ color: 0x3b3f47, roughness: 0.35, metalness: 0.85, side: THREE.DoubleSide, emissive: 0xff6a1a, emissiveIntensity: 0 });
+      const vacMat = std({ color: 0x3b3f47, roughness: 0.35, metalness: 0.85, side: THREE.DoubleSide, emissive: 0xff8a3a, emissiveIntensity: 0 });
+      const bell = (rt, re, len) => G.lathe(Array.from({ length: 13 }, (_, i) => new THREE.Vector2(rt + (re - rt) * (i / 12) ** 0.6, -len * (i / 12))), 32);
+      const plumeOf = (parent, r, len, y) => {
+        const level = { value: 0 };
+        const mat = shader({
+          uniforms: { uLevel: level, uTime: U.time },
+          vertexShader: VIEW_VS, fragmentShader: PLUME_FS, transparent: true, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending,
+        });
+        const pivot = group(parent, 0, y, 0);
+        const cone = mesh(G.cone(r, len, 24, 1, true), mat, pivot, 0, -len / 2, 0);
+        cone.rotation.x = Math.PI;
+        cone.renderOrder = 21;
+        return { level, pivot };
+      };
+
+      const rocket = group(root);
+      // First stage: hangs below the interstage plane (local y = 0).
+      const s1 = group(rocket);
+      mesh(G.cyl(R.r, R.r, L1, 40), skin, s1, 0, -L1 / 2, 0);
+      mesh(G.cyl(R.r * 1.01, R.r * 1.01, 0.55, 40), dark, s1, 0, -0.3, 0);
+      mesh(G.cyl(R.r * 1.02, R.r * 1.08, 0.5, 40), dark, s1, 0, -L1 + 0.2, 0);
+      const bell1 = R.r * 1.3;
+      mesh(bell(R.r * 0.24, R.r * 0.68, bell1), nozzleMat, s1, 0, -L1, 0);
+      const plume1 = plumeOf(s1, R.r * 0.7, R.r * 22, -L1 - bell1);
+      const glow1 = glow(s1, [1, 0.72, 0.4], 5, { power: 2.2, intensity: 0 });
+      glow1.position.set(0, -L1 - bell1 - 0.6, 0);
+      // Boosters: still burning when this scene starts, dropped high up before the core cuts off.
+      const boosters = [];
+      const addBooster = (out, dist, r, len, nose) => {
+        const home = V(out.x * dist, -L1, out.z * dist);
+        const bg = group(rocket, home.x, home.y, home.z);
+        mesh(G.cyl(r, r, len, 24), skin, bg, 0, len / 2, 0);
+        mesh(G.cone(r, nose, 24), skin, bg, 0, len + nose / 2, 0);
+        mesh(G.cyl(r * 1.03, r * 1.03, 0.25, 24), dark, bg, 0, 0.3, 0);
+        mesh(bell(r * 0.3, r * 0.75, r * 1.2), nozzleMat, bg, 0, 0, 0);
+        boosters.push({ bg, out, home, plume: plumeOf(bg, r * 0.75, r * 16, -r * 1.2), r, axis: V(out.z, 0, -out.x) });
+      };
+      for (let k = 0; k < R.strapons; k++) {
+        const a = (k * Math.PI) / 3 + Math.PI / 6;
+        addBooster(V(Math.cos(a), 0, Math.sin(a)), R.r + 0.21, 0.2, Math.min(4.4, L1 * 0.8), 0.75);
+      }
+      for (let k = 0; k < R.sideCores; k++) addBooster(V(k === 0 ? -1 : 1, 0, 0), 2 * R.r + 0.1, R.r, L1 * 0.9, 1.4);
+      // Second stage with a wide vacuum nozzle, hidden inside the interstage until separation.
+      const s2 = group(rocket);
+      mesh(G.cyl(R.r, R.r, L2, 40), skin, s2, 0, L2 / 2, 0);
+      mesh(G.cyl(R.r * 1.01, R.r * 1.01, 0.22, 40), dark, s2, 0, L2 - 0.2, 0);
+      const bell2 = R.r * 1.5;
+      mesh(bell(R.r * 0.16, R.r * 0.62, bell2), vacMat, s2, 0, 0, 0);
+      const plume2 = plumeOf(s2, R.r * 0.66, R.r * 11, -bell2);
+      const glow2 = glow(s2, [0.62, 0.8, 1], 3.2, { power: 2.4, intensity: 0 });
+      glow2.position.set(0, -bell2 - 0.3, 0);
+      mesh(G.cyl(R.r * 0.45, R.r * 0.9, 0.3, 32), dark, s2, 0, L2 + 0.15, 0);
+      // Spacecraft, stowed on the payload adapter.
+      const sat = buildSatellite();
+      const satS = R.fairR * 0.6;
+      const satHolder = group(s2, 0, L2 + 0.3 + satS * 0.66, 0);
+      sat.root.scale.setScalar(satS);
+      sat.root.rotation.x = -Math.PI / 2;
+      satHolder.add(sat.root);
+      deploy(sat, 0);
+      // Payload fairing: two half shells that split along the rocket's pitch plane.
+      const fairCyl = R.fair * 0.45;
+      const rho = (R.fairR * R.fairR + (R.fair - fairCyl) ** 2) / (2 * R.fairR);
+      const ogivePts = Array.from({ length: 21 }, (_, i) => {
+        const x = ((R.fair - fairCyl) * i) / 20;
+        return new THREE.Vector2(Math.max(0.001, Math.sqrt(rho * rho - x * x) + R.fairR - rho), x);
+      });
+      const halves = [1, -1].map((side) => {
+        const h = group(s2, 0, L2, 0);
+        const a0 = side > 0 ? 0 : Math.PI;
+        mesh(keep(new THREE.CylinderGeometry(R.fairR, R.r, 0.35, 24, 1, true, a0, Math.PI)), shell, h, 0, 0.175, 0);
+        mesh(keep(new THREE.CylinderGeometry(R.fairR, R.fairR, fairCyl, 24, 1, true, a0, Math.PI)), shell, h, 0, 0.35 + fairCyl / 2, 0);
+        mesh(keep(new THREE.LatheGeometry(ogivePts, 24, a0, Math.PI)), shell, h, 0, 0.35 + fairCyl, 0);
+        return { h, side };
+      });
+      const TOTAL = L1 + L2 + 0.35 + R.fair;
+
+      const A = ASCENT;
+      const steps = [
+        [0, T('First stage burn · pitching over to gain speed', 'Pembakaran tingkat pertama · miring untuk menambah kecepatan')],
+        ...(boosters.length ? [[A.boost, R.sideCores
+          ? T('Side booster separation', 'Pemisahan pendorong samping')
+          : T('Booster separation · the solid boosters have burned out', 'Pemisahan booster · booster padat sudah habis terbakar')]] : []),
+        [A.meco, T('MECO · main engine cut-off', 'MECO · mesin utama mati')],
+        [A.stage, T('Stage separation', 'Pemisahan tingkat')],
+        [A.ignite, T('Second stage ignition', 'Tingkat kedua menyala')],
+        [A.fairing, T('Fairing jettison · above the atmosphere', 'Fairing dilepas · sudah di atas atmosfer')],
+        [A.seco, T('SECO · orbital speed reached', 'SECO · kecepatan orbit tercapai')],
+        [A.release, T('Spacecraft separation', 'Wahana terpisah')],
+      ];
+      const tip = V();
+      const callout = addLabel(root, steps[0][1], () => tmp2.copy(tip), { dy: -46, tone: 'sun' });
+      let step = 0;
+      const axis = V();
+      const exitW = V();
+      const look = V();
+      let exploded = false;
+      const emit = (obj, y, r, rate, spread, dt) => {
+        obj.localToWorld(exitW.set(0, y, 0));
+        for (let k = Math.floor(rate * dt + Math.random()); k > 0; k--) {
+          const sp = jr(16, 24);
+          puff(flames, exitW.x, exitW.y, exitW.z,
+            -axis.x * sp + jr(-1, 1) * spread, -axis.y * sp + jr(-1, 1) * spread, jr(-1, 1) * spread,
+            jr(0.22, 0.42), r * 1.6, r * 5.5, 0.7);
+        }
+      };
+
+      return {
+        root,
+        near: 0.1,
+        enter() {
+          setSpaceLights(SUN);
+          skyMat.uniforms.uSunGlow.value = 0;
+          sunLabelOn = false;
+        },
+        lose() {
+          if (exploded) return;
+          exploded = true;
+          rocket.visible = false;
+          explode(rocket.localToWorld(V(0, L2 * 0.5, 0)), 0.9, V(), { gravity: 0 });
+        },
+        update(t, dt, time) {
+          while (step < steps.length - 1 && t >= steps[step + 1][0]) {
+            step++;
+            callout.el.textContent = steps[step][1];
+          }
+          // Gravity turn: the rocket leans toward the horizon while Earth falls away below it.
+          const pitch = lerp(34, 7, smooth(0, A.end, t)) * D2R;
+          rocket.rotation.z = pitch - Math.PI / 2;
+          axis.set(Math.cos(pitch), Math.sin(pitch), 0);
+          earth.root.position.set(0, -ER - lerp(9, 17, smooth(0, A.end, t)), 0);
+          earth.root.rotateOnWorldAxis(Z, dt * 0.028 * speed);
+
+          // First stage: burn, cut-off, then it drops behind and starts to tumble.
+          const burn1 = exploded ? 0 : 1 - smooth(A.meco - 0.12, A.meco, t);
+          plume1.level.value = burn1 * (0.62 + 0.08 * Math.random());
+          plume1.pivot.visible = burn1 > 0.01;
+          plume1.pivot.scale.set(1.7, 1, 1.7);
+          glow1.material.uniforms.uIntensity.value = burn1 * 1.5;
+          nozzleMat.emissiveIntensity = burn1 * 2.2;
+          if (burn1 > 0.05) emit(s1, -L1 - bell1, R.r, 230 * burn1, 2.4, dt);
+          // Boosters: burn out, then peel away from the core and fall behind.
+          const db = Math.max(0, t - A.boost);
+          const burnB = exploded ? 0 : 1 - smooth(A.boost - 0.15, A.boost, t);
+          for (const b of boosters) {
+            b.plume.level.value = burnB * (0.55 + 0.08 * Math.random());
+            b.plume.pivot.visible = burnB > 0.01;
+            b.plume.pivot.scale.set(1.6, 1, 1.6);
+            const side = 0.5 * db + 0.5 * db * db;
+            b.bg.position.set(b.home.x + b.out.x * side, b.home.y - (0.9 * db + 2 * db * db), b.home.z + b.out.z * side);
+            b.bg.quaternion.setFromAxisAngle(b.axis, -0.3 * db);
+            b.bg.visible = db < 3.2;
+            if (burnB > 0.05) emit(b.bg, -b.r * 1.2, b.r, 40 * burnB, 1.6, dt);
+            if (t >= A.boost && t - dt < A.boost) {
+              for (let k = 0; k < 5; k++) {
+                b.bg.localToWorld(exitW.set(0, jr(1, 3), 0));
+                puff(smoke, exitW.x, exitW.y, exitW.z, jr(-1.5, 1.5), jr(-1.5, 1.5), jr(-1.5, 1.5), jr(0.5, 1), 0.2, 1.2, 0.35, { drag: 1.5, lit: 1 });
+              }
+            }
+          }
+          const d1 = Math.max(0, t - A.stage);
+          s1.position.set(-0.22 * d1 * d1, -(0.7 * d1 + 1.3 * d1 * d1), 0);
+          s1.rotation.z = 0.09 * d1 * d1;
+          if (t >= A.stage && t - dt < A.stage) {
+            for (let k = 0; k < 26; k++) {
+              rocket.localToWorld(exitW.set(jr(-1, 1) * R.r, jr(-0.3, 0.1), jr(-1, 1) * R.r));
+              puff(smoke, exitW.x, exitW.y, exitW.z, jr(-2, 2), jr(-2, 2), jr(-2, 2), jr(0.7, 1.3), 0.3, 1.9, 0.4, { drag: 1.4, lit: 1 });
+            }
+          }
+          // Second stage: a smaller, wider vacuum plume from ignition to SECO.
+          const burn2 = exploded ? 0 : smooth(A.ignite, A.ignite + 0.25, t) * (1 - smooth(A.seco - 0.15, A.seco, t));
+          plume2.level.value = burn2 * (0.4 + 0.06 * Math.random());
+          plume2.pivot.visible = burn2 > 0.01;
+          plume2.pivot.scale.set(1.6, 1, 1.6);
+          glow2.material.uniforms.uIntensity.value = burn2 * 1.3;
+          vacMat.emissiveIntensity = burn2 * 1.6;
+          if (burn2 > 0.05) emit(s2, -bell2, R.r * 0.7, 60 * burn2, 3.2, dt);
+          // Fairing halves swing open and fall behind.
+          const df = Math.max(0, t - A.fairing);
+          for (const { h, side } of halves) {
+            h.position.set(side * (0.9 * df + 0.7 * df * df), L2 - 1.6 * df * df, 0);
+            h.rotation.z = -side * Math.min(1.5, 1.1 * df + 0.5 * df * df);
+          }
+          // Spacecraft separation: springs push the satellite ahead of the spent stage.
+          const dr = Math.max(0, t - A.release);
+          satHolder.position.y = L2 + 0.3 + satS * 0.66 + 1.5 * dr;
+          if (t >= A.release && t - dt < A.release) {
+            for (let k = 0; k < 14; k++) {
+              s2.localToWorld(exitW.set(jr(-1, 1) * R.r * 0.6, L2 + 0.3, jr(-1, 1) * R.r * 0.6));
+              puff(smoke, exitW.x, exitW.y, exitW.z, jr(-1.2, 1.2), jr(-1.2, 1.2), jr(-1.2, 1.2), jr(0.5, 0.9), 0.15, 0.9, 0.35, { drag: 1.6, lit: 1 });
+            }
+          }
+
+          // Camera: side-on chase that closes in on the upper stage and the payload after staging.
+          const k = smooth(A.stage - 0.2, A.fairing + 0.3, t);
+          rocket.localToWorld(tmp.set(0, lerp(-L1 * 0.22, L2 + R.fair * 0.45, k), 0));
+          look.lerp(tmp, t < 0.05 ? 1 : damp(dt, 5));
+          satHolder.getWorldPosition(tip);
+          const D = fitDist(lerp(TOTAL * 0.66, TOTAL * 0.4, k));
+          camera.position.set(look.x - D * 0.16 + t * 0.12 * motion, look.y + D * 0.2, look.z + D * 0.97);
+          const sh = motion * (burn1 * 0.035 + burn2 * 0.012 + shake * 0.4);
+          if (sh > 0.001) camera.position.add(tmp3.set(jr(-1, 1), jr(-1, 1), jr(-1, 1)).multiplyScalar(sh));
+          camera.lookAt(look);
+        },
+      };
     }
 
     // =====================================================================
@@ -1963,6 +2191,10 @@ function createFlightView3D(THREE, canvas, opts, textures, state) {
       const earth = makePlanet(root, 'earth', 0.36);
       earth.root.position.set(-4.4, 2.3, -8.5);
       earth.spin.rotation.y = (-90 - 100) * D2R;
+      // The Moon is tidally locked: its near side (0° longitude, local +X) always faces Earth, so it
+      // does not turn while Earth stays put in this view. Seen from here, with Earth behind the
+      // Moon, the camera looks mostly at the far side.
+      moon.spin.rotation.y = Math.atan2(-earth.root.position.z, earth.root.position.x);
       const R = 1.2;
       const inc = orbit.inc * D2R;
       const raan = -35 * D2R;
@@ -1999,7 +2231,6 @@ function createFlightView3D(THREE, canvas, opts, textures, state) {
         },
         update(t, dt, time) {
           tickRig(rig, dt);
-          moon.spin.rotation.y = rig.clock * 4 * D2R * speed;
           earth.spin.rotation.y += dt * 20 * D2R * speed;
           ring.scale.setScalar(rig.orbitScale);
           const base = (rig.clock * speed * Math.PI * 2) / 6;
@@ -2496,7 +2727,7 @@ function createFlightView3D(THREE, canvas, opts, textures, state) {
     }
 
     // ---------- Scene switching ----------
-    const scenes = { launch: buildLaunch() };
+    const scenes = { launch: buildLaunch(), ascent: buildAscent() };
     const orbitKey = orbit.body === 'moon' ? 'moon' : orbit.body === 'l1' ? 'l1' : 'earth';
     if (orbit.body !== 'earth') scenes.cruise = buildCruise();
     scenes[orbitKey] = orbitKey === 'moon' ? buildMoonOrbit() : orbitKey === 'l1' ? buildL1() : buildEarthOrbit();
@@ -2595,7 +2826,7 @@ function createFlightView3D(THREE, canvas, opts, textures, state) {
 
     return {
       setScene(name) {
-        const key = name === 'countdown' || name === 'launch' ? 'launch' : name === 'cruise' && scenes.cruise ? 'cruise' : orbitKey;
+        const key = name === 'countdown' || name === 'launch' ? 'launch' : name === 'ascent' ? 'ascent' : name === 'cruise' && scenes.cruise ? 'cruise' : orbitKey;
         if (key !== activeKey) activate(key);
       },
       setLost() {

@@ -1,7 +1,7 @@
 // Flight screen: launch sequence, live telemetry, in-flight decisions.
 import { step, eventView, resolveEvent } from '../../engine/sim.js';
 import { phaseName } from '../../engine/score.js';
-import { createFlightView } from '../flightCanvas.js';
+import { createFlightView, ASCENT, ROCKETS } from '../flightCanvas.js';
 import { icon } from '../icons.js';
 import { esc, num, pct, gb, money, years } from '../util.js';
 import { topBar, concept } from '../components.js';
@@ -379,14 +379,33 @@ export function mountFlight(root, { state, m, ctx, onFinish, link = null }) {
     phase(tx('Liftoff', 'Lepas landas'));
     play('liftoff');
     view.setScene('launch');
-    later(afterLaunch, 2900);
+    later(ascent, 2900);
   };
   later(countdown, 600);
 
-  function afterLaunch() {
+  // The climb to orbit, compressed: stage separation, fairing jettison, then the spacecraft is released.
+  function ascent() {
     if (f.lost?.phase === 'launch') return finish();
-    play('separation');
-    log(tx('Spacecraft separated from the rocket.', 'Wahana terpisah dari roket.'), 'good', 0);
+    view.setScene('ascent');
+    phase(tx('Ascent: first stage burn', 'Menanjak: pembakaran tingkat pertama'));
+    const rocket = ROCKETS[m.launcher?.id];
+    const steps = [
+      ...(rocket?.strapons || rocket?.sideCores ? [[ASCENT.boost, tx('Booster separation', 'Pemisahan booster')]] : []),
+      [ASCENT.meco, tx('MECO: main engine cut-off', 'MECO: mesin utama mati')],
+      [ASCENT.stage, tx('Stage separation', 'Pemisahan tingkat')],
+      [ASCENT.ignite, tx('Second stage burn', 'Pembakaran tingkat kedua')],
+      [ASCENT.fairing, tx('Fairing jettison', 'Fairing dilepas')],
+      [ASCENT.seco, tx('SECO: orbital speed reached', 'SECO: kecepatan orbit tercapai')],
+    ];
+    for (const [at, text] of steps) later(() => phase(text), at * 1000);
+    later(() => {
+      play('separation');
+      phase(tx('Spacecraft separation', 'Wahana terpisah'));
+      log(tx('Spacecraft separated from the rocket.', 'Wahana terpisah dari roket.'), 'good', 0);
+    }, ASCENT.release * 1000);
+    later(afterLaunch, ASCENT.end * 1000);
+  }
+  function afterLaunch() {
     if (m.orbit.body !== 'earth') {
       view.setScene('cruise');
       phase(m.life.cruiseMonths >= 3

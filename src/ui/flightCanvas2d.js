@@ -493,6 +493,7 @@ export function createFlightView2D(canvas, opts, textures) {
 
   return {
     setScene(s) {
+      if (s === 'ascent') return; // the 2D view keeps the launch drawing running through the ascent
       scene = s;
       sceneStart = performance.now();
     },

@@ -60,8 +60,9 @@ flowchart LR
    lift it.
 3. **Go/No-Go.** Each station reports GO, CAUTION or NO-GO from its own numbers. In team mode,
    every player votes and the rocket waits for four GOs.
-4. **Flight.** Launch, reach orbit, and decide what to do when a solar storm, space debris or a
-   broken reaction wheel shows up. The 3D view plays each event (debris closing in, an ash plume
+4. **Flight.** Launch and climb to orbit through the real steps: main engine cut-off, stage
+   separation, fairing jettison and spacecraft separation. Then decide what to do when a solar
+   storm, space debris or a broken reaction wheel shows up. The 3D view plays each event (debris closing in, an ash plume
    over Semeru, auroras, a CME heading for Earth) and the result of your decision. It paints the
    ground track and the instrument's swath onto Earth, so you can see how often you pass over the
    target.
@@ -213,13 +214,17 @@ and SATRIA-1 also appear.
 |---|---|
 | ![Design room](docs/screenshots/03-design-room.png) | ![Go/No-Go poll](docs/screenshots/04-go-no-go.png) |
 
-| Launch | An anomaly in flight |
+| Launch | Climb to orbit |
 |---|---|
-| ![Launch](docs/screenshots/05-launch.png) | ![A solar storm alarm and the decision it asks for](docs/screenshots/08-flight-event.png) |
+| ![Launch](docs/screenshots/05-launch.png) | ![Fairing jettison during the climb to orbit](docs/screenshots/10-ascent.png) |
 
-| Online team room | Mission report |
+| An anomaly in flight | Online team room |
 |---|---|
-| ![Online room with claimed stations](docs/screenshots/09-online-room.png) | ![Mission report](docs/screenshots/07-report.png) |
+| ![A solar storm alarm and the decision it asks for](docs/screenshots/08-flight-event.png) | ![Online room with claimed stations](docs/screenshots/09-online-room.png) |
+
+| Mission report |
+|---|
+| ![Mission report](docs/screenshots/07-report.png) |
 
 ## How it is built
 
