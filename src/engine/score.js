@@ -145,7 +145,7 @@ function buildFindings(m, flight, ctx, r) {
   // What went well
   if (!r.lost) {
     if (m.comms.delivery >= 0.98) {
-      out.push({ tone: 'good', title: tx('Every bit came home', 'Semua data sampai di rumah'),
+      out.push({ tone: 'good', title: tx('All data delivered', 'Semua data terkirim'),
         text: tx(`Your downlink could carry ${fmt(m.comms.downlinkGB, 1)} GB a day against ${fmt(m.comms.generatedGB, 1)} GB generated.`,
           `Downlink-mu mampu membawa ${fmt(m.comms.downlinkGB, 1)} GB per hari, sementara data yang dihasilkan ${fmt(m.comms.generatedGB, 1)} GB.`), concept: 'data-rate' });
     }
@@ -159,20 +159,20 @@ function buildFindings(m, flight, ctx, r) {
         m.mass.margin > HEALTHY_MARGIN.max ? tx(`${fmt(m.mass.margin * 100)}% spare mass`, `cadangan massa ${fmt(m.mass.margin * 100)}%`) : null,
         m.power.margin > HEALTHY_MARGIN.max ? tx(`${fmt(m.power.margin * 100)}% spare power`, `cadangan daya ${fmt(m.power.margin * 100)}%`) : null,
       ].filter(Boolean).join(tx(' and ', ' dan '));
-      out.push({ tone: 'info', title: tx('Generous margins', 'Margin terlalu longgar'),
+      out.push({ tone: 'info', title: tx('Margins larger than needed', 'Margin lebih besar dari perlu'),
         text: tx(`You carried ${parts}. Safe, but that capacity costs money and mass. A smaller bus, array or rocket might do the same job (the sweet spot is 10–45%).`,
           `Kamu membawa ${parts}. Aman, tapi kapasitas itu memakan biaya dan massa. Bus, panel, atau roket yang lebih kecil mungkin bisa melakukan hal yang sama (titik idealnya 10–45%).`), concept: 'margin' });
     }
     if (m.launch.cheapest && m.launch.cheapest.launcher.id === m.launcher.id) {
-      out.push({ tone: 'good', title: tx('Right-sized ride', 'Tumpangan yang pas'),
+      out.push({ tone: 'good', title: tx('Cheapest suitable rocket', 'Roket termurah yang cocok'),
         text: tx(`The ${nameOf(m.launcher).toLowerCase()} was the cheapest rocket that could carry your mission.`, `${nameOf(m.launcher)} adalah roket termurah yang bisa membawa misimu.`), concept: 'launch' });
     }
     if (m.debrisOk && m.orbit.body === 'earth') {
-      out.push({ tone: 'good', title: tx('A good space citizen', 'Warga antariksa yang baik'),
+      out.push({ tone: 'good', title: tx('Debris rules met', 'Aturan sampah antariksa dipatuhi'),
         text: tx('Your satellite will leave its orbit within the debris rules after the mission.', 'Satelitmu akan meninggalkan orbit sesuai aturan sampah antariksa setelah misi selesai.'), concept: 'debris' });
     }
     if (r.scienceRatio >= 1) {
-      out.push({ tone: 'good', title: tx('Science beyond the target', 'Sains melampaui target'),
+      out.push({ tone: 'good', title: tx('Science above target', 'Sains di atas target'),
         text: tx(`You returned ${fmt(r.scienceRatio * 100)}% of the planned science.`, `Kamu menghasilkan ${fmt(r.scienceRatio * 100)}% dari sains yang direncanakan.`), concept: 'requirements' });
     }
   }
