@@ -13,6 +13,7 @@ import { CAPABILITIES, ROLES } from '../src/data/catalog.js';
 import { setLang } from '../src/i18n.js';
 import { satelliteSchematic } from '../src/ui/satSchematic.js';
 import { flightChart } from '../src/ui/flightChart.js';
+import { launchStack, launchStackPanel } from '../src/ui/launchStack.js';
 
 let passed = 0;
 function test(name, fn) {
@@ -305,6 +306,52 @@ test('the flight recorder chart draws a finished flight and stays empty without 
   assert.ok(html.includes('fc-sci') && html.includes('fc-fuel'));
   assert.ok(!/NaN|undefined|Infinity/.test(html));
   assert.equal((html.match(/class="fc-mark/g) ?? []).length, f.decisions.length);
+});
+
+console.log('Launch stack (3D rocket panel)');
+
+test('the launch stack describes every starter design in both languages', () => {
+  const hosts = ['lv-small', 'lv-medium', 'lv-mediumheavy', 'lv-heavy'];
+  for (const lang of ['en', 'id']) {
+    setLang(lang);
+    try {
+      for (const s of SCENARIOS) {
+        const stack = launchStack(computeMission(s.starter, ctxFor(s.id, s.priorities[0].id)));
+        assert.equal(stack.status, 'fits', `${s.id} starter should fit its rocket`);
+        assert.ok(hosts.includes(stack.hostId), `${s.id}: unknown rocket shape ${stack.hostId}`);
+        assert.ok(stack.sat?.bus && stack.used > 0 && stack.used <= 1);
+        const html = launchStackPanel(stack);
+        assert.ok(html.includes('data-rocket-slot'));
+        assert.ok(!/NaN|undefined|Infinity/.test(html + JSON.stringify(stack)), `${s.id}/${lang}: broken text`);
+      }
+    } finally {
+      setLang('en');
+    }
+  }
+});
+
+test('the launch stack follows the rocket choice: rideshare, too heavy, too big, nothing chosen', () => {
+  const ctx = ctxFor('semeru', 'warning');
+  const starter = getScenario('semeru').starter;
+  const ride = launchStack(computeMission(starter, ctx));
+  assert.equal(ride.hostId, 'lv-mediumheavy');
+  assert.ok(ride.rideshare && ride.labels.others);
+
+  const big = { ...starter, bus: 'medium', solar: 'sa-fixed', battery: 'bat-1500' };
+  const over = launchStack(computeMission({ ...big, launcher: 'lv-small' }, ctx));
+  assert.equal(over.status, 'over');
+  assert.ok(over.alarm && over.tone === 'bad' && over.used > 1);
+  assert.equal(launchStack(computeMission({ ...big, launcher: 'lv-rideshare' }, ctx)).status, 'too-big');
+
+  const none = launchStack(computeMission({}, ctx));
+  assert.equal(none.status, 'none');
+  assert.ok(none.ghost && none.sat === null && none.rows.every((r) => r[2] === null));
+
+  const m = computeMission(starter, ctx);
+  const preview = launchStack(m, computeMission({ ...starter, launcher: 'lv-heavy' }, ctx));
+  assert.ok(preview.preview && preview.rows[0][3], 'a hovered rocket is marked as a preview change');
+  assert.equal(preview.hostId, 'lv-heavy');
+  assert.ok(preview.labels.boost);
 });
 
 console.log(`\n${passed} passed${process.exitCode ? ', some FAILED' : ''}`);
