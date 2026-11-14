@@ -91,6 +91,7 @@ export function mountFlight(root, { state, m, ctx, onFinish, link = null }) {
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const view = createFlightView(root.querySelector('#flight-canvas'), {
     orbit: m.orbit, scenario: ctx.scenario, count: m.count, network: m.network, launcher: m.launcher, reducedMotion: reduced,
+    swathKm: Math.max(0, ...m.science.perInst.map((p) => p.geo?.swath ?? 0)),
   });
   const $ = (id) => root.querySelector(`#${id}`);
   const timers = new Set();
@@ -255,6 +256,7 @@ export function mountFlight(root, { state, m, ctx, onFinish, link = null }) {
   }
 
   let remoteDecisions = [];
+  let shownEvent = '';
   const eventIndex = () => f.events.filter((e) => e.resolved).length;
 
   function showEvent() {
@@ -270,15 +272,20 @@ export function mountFlight(root, { state, m, ctx, onFinish, link = null }) {
     loop = null;
     skipping = false;
     controls(false);
-    view.flash(ev.kind);
+    // An online room re-sends its state while this dialog is open. Redraw the card, because who
+    // may decide can change, but do not replay the flash, the alarm or the 3D effect.
+    const key = `${eventIndex()}:${ev.id}`;
+    const again = shownEvent === key;
+    shownEvent = key;
+    if (!again) view.flash(ev.kind, ev.id);
     const mine = !link || link.canChoose(ev.id);
     active = { lamp: EVENT_LAMP[ev.id] ?? (ev.kind === 'opportunity' ? 'payload' : 'env'), kind: ev.kind, concept: ev.concept,
       why: mine
         ? tx(`${ev.title}: waiting for your decision.`, `${ev.title}: menunggu keputusanmu.`)
         : tx(`${ev.title}: waiting for another station.`, `${ev.title}: menunggu stasiun lain.`) };
-    selected = active.lamp;
+    if (!again) selected = active.lamp;
     lamps();
-    play(ev.kind === 'opportunity' ? 'opportunity' : 'alert');
+    if (!again) play(ev.kind === 'opportunity' ? 'opportunity' : 'alert');
     phase(ev.kind === 'opportunity' ? tx('Opportunity', 'Peluang') : tx('Anomaly: decision needed', 'Anomali: perlu keputusan'));
     const layer = $('event-layer');
     layer.hidden = false;
@@ -304,6 +311,7 @@ export function mountFlight(root, { state, m, ctx, onFinish, link = null }) {
   function applyChoice(optionId) {
     const res = resolveEvent(f, m, ctx, optionId);
     if (!res) return;
+    view.outcome?.(res.effects);
     const bad = res.effects.endMission || (res.effects.scienceMult && res.effects.scienceMult < 1) || (res.effects.lifeMonths && res.effects.lifeMonths < 0);
     play(bad ? 'bad' : 'good');
     log(`${res.text}`, bad ? 'bad' : res.effects.bonusYears ? 'good' : 'info');

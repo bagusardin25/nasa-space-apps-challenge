@@ -32,7 +32,10 @@ you what went wrong instead of only giving a score.
    so you can see at a glance whether the rocket can lift it.
 3. **Go/No-Go.** Each role reports GO, CAUTION or NO-GO. In team mode every player votes.
 4. **Flight.** Launch, reach orbit, and decide what to do when a solar storm, space debris or a
-   broken reaction wheel shows up.
+   broken reaction wheel shows up. The 3D view shows each event as it happens (debris closing in,
+   an ash plume over Semeru, auroras, a CME heading for Earth) and the result of your decision.
+   It also paints the ground track and the instrument's swath onto Earth, so you can see how often
+   your orbit passes over the target.
 5. **Report.** A score, the cause of each problem, real NASA imagery of your target, and real
    missions that made similar choices.
 

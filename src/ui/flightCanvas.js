@@ -2,12 +2,14 @@
 // primitives, so there are no model files that could fail to load. Scenes: launch pad, cruise,
 // Earth orbit, lunar orbit and the Sun–Earth L1 point (stylized, not to scale).
 // Textures: NASA Blue Marble (GIBS WMS) and the NASA SVS CGI Moon Kit (LRO LROC).
-// Three.js is imported lazily as a native ES module from a CDN (no build step). If it cannot
-// load, or WebGL is unavailable, the Canvas 2D renderer in flightCanvas2d.js takes over.
+// Three.js (r160) is imported lazily as a native ES module (no build step): the bundled copy in
+// assets/vendor first, so it works offline, then two CDNs. If none loads, or WebGL is unavailable,
+// the Canvas 2D renderer in flightCanvas2d.js takes over.
 import { tx as T } from '../i18n.js';
 import { createFlightView2D, STATIONS, mulberry } from './flightCanvas2d.js';
 
 const THREE_URLS = [
+  new URL('../../assets/vendor/three.module.js', import.meta.url).href,
   'https://unpkg.com/three@0.160.0/build/three.module.js',
   'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js',
 ];
@@ -21,6 +23,9 @@ const EARTH_TEXTURE = [
 const MOON_TEXTURE = ['assets/textures/moon-lroc-svs-1k.jpg'];
 
 const D2R = Math.PI / 180;
+const orbitPeriodS = (altKm) => 2 * Math.PI * Math.sqrt((6378.137 + altKm) ** 3 / 398600.4418);
+// Places that call for help in the earthquake event: Banda Aceh, Padang, Palu, Mataram, Ambon, Manado, Jayapura.
+const SOS_SITES = [[5.55, 95.32], [-0.95, 100.35], [-0.9, 119.87], [-8.58, 116.12], [-3.7, 128.18], [1.47, 124.84], [-2.53, 140.72]];
 const TAN_HALF_FOV = Math.tan(22.5 * D2R);
 const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
 const lerp = (a, b, t) => a + (b - a) * t;
@@ -44,7 +49,7 @@ function loadImage(urls) {
 const imageReady = (img) => img.complete && img.naturalWidth > 0;
 
 let threeModule = null;
-/** Imports Three.js once (falls back to a second CDN). Rejects when offline; a later call retries. */
+/** Imports Three.js once (local copy, then the CDNs). Rejects if none loads; a later call retries. */
 export function loadThree() {
   if (!threeModule) {
     threeModule = (async () => {
@@ -66,7 +71,7 @@ export function preloadTextures() {
   loadThree().catch(() => {});
 }
 
-/** Creates the flight view on `canvas`. Returns { setScene(name), setLost(), flash(kind), destroy() }. */
+/** Creates the flight view on `canvas`. Returns { setScene(name), setLost(), flash(kind, eventId), outcome(effects), destroy() }. */
 export function createFlightView(canvas, opts) {
   const state = { scene: 'countdown', since: performance.now(), lost: false };
   const textures = { earth: loadImage(EARTH_TEXTURE), moon: loadImage(MOON_TEXTURE) };
@@ -106,8 +111,12 @@ export function createFlightView(canvas, opts) {
       state.lost = true;
       impl?.setLost();
     },
-    flash(kind) {
-      impl?.flash(kind);
+    flash(kind, eventId) {
+      impl?.flash(kind, eventId);
+    },
+    /** Shows the consequence of an in-flight decision (the effects returned by resolveEvent). */
+    outcome(effects) {
+      impl?.outcome?.(effects);
     },
     destroy() {
       destroyed = true;
@@ -209,6 +218,7 @@ void main() {
 }`;
 // Day side lit by the Sun with a soft terminator, ocean sun glint and limb haze (Earth only).
 const PLANET_FS = `uniform sampler2D uMap; uniform float uHasMap; uniform vec3 uFallback; uniform vec3 uSunDir;
+uniform sampler2D uCover; uniform float uCoverOn;
 uniform float uWater; uniform float uAtmo; uniform float uTerm; uniform float uGain; uniform float uNight;
 varying vec2 vUv; varying vec3 vN; varying vec3 vW;
 void main() {
@@ -225,6 +235,15 @@ void main() {
   float fres = pow(1.0 - max(dot(n, v), 0.0), 2.5);
   col += vec3(0.25, 0.5, 1.0) * fres * uAtmo * 0.55 * smoothstep(-0.2, 0.4, ndl);
   col += vec3(0.6, 0.22, 0.06) * albedo * uAtmo * smoothstep(-0.12, 0.0, ndl) * (1.0 - smoothstep(0.0, 0.18, ndl)) * 0.8;
+  // Coverage map (Earth orbit): red channel = imaged swath, green = ground track.
+  if (uCoverOn > 0.5) {
+    vec2 cv = texture2D(uCover, vUv).rg;
+    float sw = clamp((cv.r - 0.07) / 0.93, 0.0, 1.0);
+    float tr = clamp((cv.g - 0.07) / 0.93, 0.0, 1.0);
+    float lit = 0.3 + 0.7 * smoothstep(-0.1, 0.3, ndl);
+    col = mix(col, col * 0.8 + vec3(0.02, 0.16, 0.22) * lit, sw * 0.6);
+    col += vec3(0.5, 0.9, 1.0) * tr * 0.5 * lit;
+  }
   gl_FragColor = vec4(col, 1.0);
   #include <colorspace_fragment>
 }`;
@@ -316,7 +335,7 @@ void main() {
 }`;
 
 function createFlightView3D(THREE, canvas, opts, textures, state) {
-  const { orbit, scenario, count = 1, network, launcher, reducedMotion = false } = opts;
+  const { orbit, scenario, count = 1, network, launcher, reducedMotion = false, swathKm = 0 } = opts;
   const speed = reducedMotion ? 0.35 : 1;
   const motion = reducedMotion ? 0 : 1;
   const rand = mulberry(42);
@@ -650,7 +669,12 @@ function createFlightView3D(THREE, canvas, opts, textures, state) {
               vel[j] += (seed[i] < 0.5 ? -1 : 1) * sp * 0.8;
               vel[j + 2] += (seed[i] - 0.5) * sp * 0.5;
             }
-            if (flame) {
+            if (flame && s[o + 7] > 1.5) {
+              // Fixed-color sparks (radiation, data, damage): no fire color ramp.
+              col[j] = base[j]; col[j + 1] = base[j + 1]; col[j + 2] = base[j + 2];
+              alpha[i] = s[o + 4] * (1 - f);
+              size[i] = lerp(s[o + 2], s[o + 3], f);
+            } else if (flame) {
               let r;
               let gg;
               let b;
@@ -869,7 +893,7 @@ function createFlightView3D(THREE, canvas, opts, textures, state) {
       x.translate(faceU * 512, 1024 * 0.6);
       x.rotate(-Math.PI / 2);
       x.scale(1 / stretch, 1);
-      x.font = '700 60px "Space Grotesk", system-ui, sans-serif';
+      x.font = '700 60px "IBM Plex Sans Condensed", "IBM Plex Sans", system-ui, sans-serif';
       x.textAlign = 'center';
       x.textBaseline = 'middle';
       x.fillStyle = p.dark ? '#e8eef9' : '#13213f';
@@ -910,7 +934,7 @@ function createFlightView3D(THREE, canvas, opts, textures, state) {
       const body = mesh(planetGeo, shader({
         uniforms: {
           uMap: { value: map.tex }, uHasMap: map.has, uFallback: { value: new THREE.Color(isEarth ? 0x2a63b8 : 0x8f8f8f) }, uSunDir: U.sunDir,
-          uWater: { value: isEarth ? 1 : 0 }, uAtmo: { value: isEarth ? 1 : 0 }, uTerm: { value: isEarth ? 0.1 : 0.02 }, uGain: { value: isEarth ? 1 : 1.12 }, uNight: { value: isEarth ? 1 : 0.15 },
+          uWater: { value: isEarth ? 1 : 0 }, uAtmo: { value: isEarth ? 1 : 0 }, uTerm: { value: isEarth ? 0.1 : 0.02 }, uGain: { value: isEarth ? 1 : 1.12 }, uNight: { value: isEarth ? 1 : 0.15 }, uCover: { value: null }, uCoverOn: { value: 0 },
         },
         vertexShader: WORLD_VS, fragmentShader: PLANET_FS,
       }), spin);
@@ -923,7 +947,7 @@ function createFlightView3D(THREE, canvas, opts, textures, state) {
         }), root);
         atmo.scale.setScalar(radius * s);
       }
-      return { root, spin, radius };
+      return { root, spin, radius, body };
     }
 
     // ---------- Satellite: gold-foil bus, two deployable blue solar wings, high-gain dish, camera ----------
@@ -983,10 +1007,14 @@ function createFlightView3D(THREE, canvas, opts, textures, state) {
         }
         return { wing, hinges, side };
       });
+      // Thruster plume, shown during maneuvers.
+      const burn = glow(root, [1, 0.78, 0.5], 1.6, { power: 2.4, intensity: 1.4 });
+      burn.position.set(0, 0, -0.95);
+      burn.visible = false;
       const baseColor = {};
       const baseEnv = {};
       for (const [k, mm] of Object.entries(m)) { baseColor[k] = mm.color.clone(); baseEnv[k] = mm.envMapIntensity; }
-      return { root, m, wings, baseColor, baseEnv };
+      return { root, m, wings, burn, baseColor, baseEnv };
     }
     function deploy(sat, p) {
       const f = 1 - easeInOut(clamp(p));
@@ -1061,13 +1089,13 @@ function createFlightView3D(THREE, canvas, opts, textures, state) {
       tintSat(f.sat, lerp(f.shade, 0.7, k), k);
       fadeSat(f.sat, k);
     }
-    function eclipse(f, center, radius, dt) {
+    function eclipse(f, center, radius, dt, dim = 1) {
       tmp.copy(f.pos).sub(center);
       const along = tmp.dot(U.sunDir.value);
       const off = tmp.addScaledVector(U.sunDir.value, -along).length();
       const target = along < 0 && off < radius * 0.98 ? 0.3 : 1;
       f.shade += (target - f.shade) * damp(dt, 6);
-      tintSat(f.sat, f.shade, 0);
+      tintSat(f.sat, f.shade * dim, 0);
     }
 
     // ---------- Downlinks ----------
@@ -1147,9 +1175,31 @@ function createFlightView3D(THREE, canvas, opts, textures, state) {
     const chase = V();
     const look = V();
     // Returns the pull-back progress (0 = close-up, 1 = overview); the orbit ring fades in with it.
-    function orbitCamera(t, f, overPos, overTarget, chaseDist, ring) {
+    // While an event plays out, the camera glides toward the craft or toward a place on the planet.
+    const focusPos = V();
+    const focusLook = V();
+    function orbitCamera(t, f, overPos, overTarget, chaseDist, ring, rig, dt) {
       const e = reducedMotion || !f ? 1 : easeInOut(clamp((t - 0.5) / 2.8));
-      if (ring) ring.material.opacity = ring.userData.opacity * smooth(0.35, 0.9, e);
+      if (ring) ring.material.opacity = ring.userData.opacity * smooth(0.35, 0.9, e) * (rig?.focusType === 'sat' ? 1 - 0.5 * rig.focusK : 1);
+      if (rig) {
+        if (rig.focus) rig.focusType = rig.focus;
+        rig.focusK += ((rig.focus ? 1 : 0) - rig.focusK) * damp(dt, 1.6);
+        const k = easeInOut(clamp(rig.focusK)) * e;
+        if (k > 0.001) {
+          if (rig.focusType === 'sat' && f) {
+            focusPos.set(0.9, 0.6, -1.5).multiplyScalar(chaseDist * 1.7).applyQuaternion(f.holder.quaternion).add(f.pos);
+            focusLook.copy(f.pos);
+          } else {
+            const dist = overPos.distanceTo(overTarget);
+            tmp.copy(overPos).sub(overTarget).normalize();
+            tmp.lerp(tmp2.copy(rig.focusPoint).sub(overTarget).normalize(), 0.85).normalize();
+            focusPos.copy(overTarget).addScaledVector(tmp, dist * 0.82);
+            focusLook.lerpVectors(overTarget, rig.focusPoint, 0.75);
+          }
+          overPos = tmp2.lerpVectors(overPos, focusPos, k);
+          overTarget = tmp3.lerpVectors(overTarget, focusLook, k);
+        }
+      }
       if (e >= 1) {
         camera.position.copy(overPos);
         camera.lookAt(overTarget);
@@ -1161,6 +1211,116 @@ function createFlightView3D(THREE, canvas, opts, textures, state) {
       camera.lookAt(look);
       if (shake > 0.01 && motion) camera.position.addScalar(jr(-1, 1) * shake * 0.03);
       return e;
+    }
+
+    // Shared, event-driven state of an orbit scene (see the event effects below).
+    const CONE_BASE = V(0.49, 0.78, 1);
+    const CONE_GOLD = V(1, 0.8, 0.35);
+    const CONE_BAD = V(1, 0.5, 0.3);
+    function makeRig(kind, fields) {
+      return {
+        kind, clock: 0, timeScale: 1, spinRate: 0, orbitScale: 1, wobble: 0, dim: 1, linksDown: false, forceLink: false,
+        coneOn: true, coneColor: CONE_BASE.clone(), coneFlicker: false, coneDegraded: false, coneEclipseOff: false,
+        focus: null, focusType: null, focusPoint: V(), focusK: 0, focusOwner: null,
+        ...fields,
+      };
+    }
+    /** Advances the scene clock; orbits slow down while the camera focuses on an event. */
+    function tickRig(rig, dt) {
+      rig.timeScale += ((rig.focus ? 0.3 : 1) - rig.timeScale) * damp(dt, 1.5);
+      rig.clock += dt * rig.timeScale;
+    }
+    /** Per-craft event visuals: attitude wobble (lead craft only) and the instrument's field of view. */
+    function craftFx(rig, f, k, time) {
+      if (k === 0 && rig.wobble > 0.001) {
+        f.holder.rotateX(Math.sin(time * 6.3) * rig.wobble);
+        f.holder.rotateZ(Math.sin(time * 4.1 + 1) * rig.wobble * 0.7);
+      }
+      if (!f.fov) return;
+      f.fov.visible = rig.coneOn && !(rig.coneEclipseOff && f.shade < 0.6);
+      const u = f.fov.material.uniforms;
+      u.uOpacity.value = 0.07 * (rig.coneDegraded ? 0.6 : 1) * (rig.coneFlicker ? 0.2 + 0.8 * Math.random() : 1) * (rig.coneColor.equals(CONE_BASE) ? 1 : 1.8);
+      u.uColor.value.copy(rig.coneDegraded ? CONE_BAD : rig.coneColor);
+    }
+
+    // Ground track (green) and instrument swath (red) painted onto an Earth-fixed map that the globe
+    // shader overlays, so the coverage pattern builds up pass after pass and slowly fades.
+    function coverageMap(earth) {
+      const CW = 1024;
+      const CH = 512;
+      const [c, x] = canvas2d(CW, CH);
+      x.fillStyle = '#000';
+      x.fillRect(0, 0, CW, CH);
+      x.lineCap = 'round';
+      const tex = keep(new THREE.CanvasTexture(c)); // data, not color: no sRGB decoding
+      earth.body.material.uniforms.uCover.value = tex;
+      earth.body.material.uniforms.uCoverOn.value = 1;
+      const halfDeg = Math.max(0, swathKm || 0) / 2 / 111.2;
+      const swathPx = (2 * halfDeg * CW) / 360;
+      let dirty = false;
+      let fadeT = 0;
+      let uploadT = 0;
+      const line = (x0, y0, x1, y1) => {
+        x.beginPath();
+        x.moveTo(x0, y0);
+        x.lineTo(x1, y1);
+        x.stroke();
+      };
+      return {
+        halfDeg,
+        /** Sub-satellite point of a craft as an Earth-fixed unit vector. */
+        subPoint: (pos, out) => earth.spin.worldToLocal(out.copy(pos)).normalize(),
+        paint(f, p) {
+          const lat = Math.asin(clamp(p.y, -1, 1));
+          const px = (Math.atan2(-p.z, p.x) / Math.PI / 2 + 0.5) * CW;
+          const py = (0.5 - lat / Math.PI) * CH;
+          if (f.track && Math.abs(px - f.track.x) < CW / 2) {
+            x.globalCompositeOperation = 'lighten';
+            if (swathPx > 0) {
+              x.strokeStyle = '#f00';
+              x.lineWidth = Math.max(1, swathPx / Math.max(0.2, Math.cos(lat)));
+              line(f.track.x, f.track.y, px, py);
+            }
+            x.strokeStyle = '#0f0';
+            x.lineWidth = 1.4;
+            line(f.track.x, f.track.y, px, py);
+            dirty = true;
+          }
+          f.track ??= {};
+          f.track.x = px;
+          f.track.y = py;
+        },
+        update(dt) {
+          fadeT += dt;
+          uploadT += dt;
+          if (fadeT > 1.5) {
+            fadeT = 0;
+            x.globalCompositeOperation = 'source-over';
+            x.fillStyle = 'rgba(0,0,0,0.017)';
+            x.fillRect(0, 0, CW, CH);
+            dirty = true;
+          }
+          if (dirty && uploadT > 0.1) {
+            tex.needsUpdate = true;
+            dirty = false;
+            uploadT = 0;
+          }
+        },
+      };
+    }
+
+    // Aurora curtains around both magnetic poles (solar storm, CME arrival).
+    const auroraMat = shader({
+      uniforms: { uColor: { value: V(0.35, 1, 0.6) }, uOpacity: { value: 0 }, uFlip: { value: 1 } },
+      vertexShader: VIEW_VS, fragmentShader: BEAM_FS, transparent: true, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending,
+    });
+    function addAurora(parent, r) {
+      const g = group(parent);
+      const geo = G.cyl(0.4 * r, 0.4 * r, 0.08 * r, 64, 1, true);
+      mesh(geo, auroraMat, g, 0, 0.96 * r, 0);
+      mesh(geo, auroraMat, g, 0, -0.96 * r, 0).rotation.x = Math.PI;
+      g.visible = false;
+      return g;
     }
 
     // =====================================================================
@@ -1631,7 +1791,12 @@ function createFlightView3D(THREE, canvas, opts, textures, state) {
       const satScale = isGeo ? 0.16 : 0.055;
       const camDir = V(0, Math.sin(16 * D2R), Math.cos(16 * D2R));
       const lon0 = isGeo ? 108 - 58 : 100;
+      const PERIOD = 7;
+      // Earth turns by its real angle per orbit (about 24° in a 95-minute orbit), so the spacing
+      // between successive ground tracks matches reality.
+      const earthRate = isGeo ? 0 : (Math.PI * 2 * orbitPeriodS(orbit.alt)) / 86164 / PERIOD;
       earth.spin.rotation.y = (-90 - lon0) * D2R;
+      const center = V();
 
       const ring = ringMesh(root, R, normal);
       if (!isGeo) {
@@ -1643,8 +1808,8 @@ function createFlightView3D(THREE, canvas, opts, textures, state) {
         const east = V().crossVectors(Y, node).normalize();
         const rho = 0.26;
         const arc = Array.from({ length: 33 }, (_, i) => {
-          const s = (i / 32) * inc;
-          return node.clone().addScaledVector(east, rho * Math.cos(s)).addScaledVector(Y, sgn * rho * Math.sin(s));
+          const a = (i / 32) * inc;
+          return node.clone().addScaledVector(east, rho * Math.cos(a)).addScaledVector(Y, sgn * rho * Math.sin(a));
         });
         const gold = lineMat({ color: 0xffd166, opacity: 0.9 });
         root.add(new THREE.Line(keep(new THREE.BufferGeometry().setFromPoints(arc)), gold));
@@ -1654,29 +1819,42 @@ function createFlightView3D(THREE, canvas, opts, textures, state) {
       }
 
       // Ground stations and the scenario target ride on the spinning Earth.
-      const stations = (STATIONS[network?.id] ?? []).map((s) => {
-        const local = latLon(s.lat, s.lon, 1.004);
+      const stations = (STATIONS[network?.id] ?? []).map((st) => {
+        const local = latLon(st.lat, st.lon, 1.004);
         const m = mesh(G.sphere(0.016, 10, 6), basic({ color: 0x6fe3c1 }), earth.spin, local.x, local.y, local.z);
-        return { ...s, mesh: m, world: V(), up: V() };
+        return { ...st, mesh: m, world: V(), up: V() };
       });
-      const facing = (p) => tmp3.copy(camera.position).sub(p).normalize().dot(tmp.copy(p).normalize());
-      for (const s of stations) {
-        if (s.label && !scenario.target) {
-          addLabel(root, s.label, () => s.mesh.getWorldPosition(tmp2), { align: 'left', dx: 8, dy: 10, when: () => facing(s.mesh.getWorldPosition(tmp2)) > 0.2 });
+      const home = stations.find((st) => st.label === 'Surabaya');
+      const facing = (pt) => tmp3.copy(camera.position).sub(pt).normalize().dot(tmp.copy(pt).normalize());
+      for (const st of stations) {
+        if (st.label && !scenario.target) {
+          addLabel(root, st.label, () => st.mesh.getWorldPosition(tmp2), { align: 'left', dx: 8, dy: 10, when: () => facing(st.mesh.getWorldPosition(tmp2)) > 0.2 });
         }
       }
       let pulse = null;
-      if (scenario.target) {
-        const tgt = scenario.target;
-        const up = latLon(tgt.lat, tgt.lon, 1);
+      let targetLabel = null;
+      const targetLocal = scenario.target ? latLon(scenario.target.lat, scenario.target.lon, 1) : null;
+      const targetName = scenario.target ? T(scenario.target.label, scenario.target.labelId) : '';
+      if (targetLocal) {
         const cone = mesh(G.cone(0.028, 0.09, 12), basic({ color: 0xff8a4c }), earth.spin);
-        cone.position.copy(up).multiplyScalar(1.045);
-        cone.quaternion.setFromUnitVectors(Y, up);
+        cone.position.copy(targetLocal).multiplyScalar(1.045);
+        cone.quaternion.setFromUnitVectors(Y, targetLocal);
         pulse = mesh(keep(new THREE.RingGeometry(0.02, 0.028, 32)), basic({ color: 0xff8a4c, transparent: true, side: THREE.DoubleSide, depthWrite: false }), earth.spin);
-        pulse.position.copy(up).multiplyScalar(1.003);
-        pulse.quaternion.setFromUnitVectors(V(0, 0, 1), up);
-        addLabel(root, T(tgt.label, tgt.labelId), () => cone.getWorldPosition(tmp2), { align: 'left', dx: 10, dy: -10, tone: 'warm', when: () => facing(cone.getWorldPosition(tmp2)) > 0.15 });
+        pulse.position.copy(targetLocal).multiplyScalar(1.003);
+        pulse.quaternion.setFromUnitVectors(V(0, 0, 1), targetLocal);
+        targetLabel = addLabel(root, targetName, () => cone.getWorldPosition(tmp2), { align: 'left', dx: 10, dy: -10, tone: 'warm', when: () => facing(cone.getWorldPosition(tmp2)) > 0.15 });
       }
+      // Calls for help across Indonesia (earthquake event), hidden until needed.
+      const sosMat = basic({ color: 0xff5a4c, transparent: true, side: THREE.DoubleSide, depthWrite: false });
+      const sosGeo = keep(new THREE.RingGeometry(0.012, 0.019, 28));
+      const sos = SOS_SITES.map(([lat, lon]) => {
+        const up = latLon(lat, lon, 1);
+        const m = mesh(sosGeo, sosMat, earth.spin);
+        m.position.copy(up).multiplyScalar(1.004);
+        m.quaternion.setFromUnitVectors(V(0, 0, 1), up);
+        m.visible = false;
+        return m;
+      });
 
       const fleet = makeFleet(root, count, satScale, isGeo ? 0 : R - 1.0);
       fleet.forEach((f) => { f.link = makeLink(root, isGeo ? 0.12 : 0.05); });
@@ -1687,13 +1865,20 @@ function createFlightView3D(THREE, canvas, opts, textures, state) {
         earth.spin.localToWorld(latLon(0, 108, R, geoPos));
         addLabel(root, T('Geostationary: hovers over 108° E', 'Geostasioner: diam di atas 108° BT'), () => tmp2.copy(geoPos), { dy: -30 });
       }
-      const PERIOD = 7;
+      const cover = isGeo ? null : coverageMap(earth);
+      const sub = V();
+      let imaged = 0;
+      let imagedFlash = 0;
+      const rig = makeRig('earth', {
+        fleet, center, radius: 1, satScale, ring, earthSpin: earth.spin, aurora: addAurora(earth.root, 1),
+        targetLocal, stationLocal: home ? latLon(home.lat, home.lon, 1) : null, sos, sosMat, sosCenter: latLon(-2.5, 118, 1),
+      });
       const overPos = V();
-      const center = V();
       let lost = false;
       return {
         root,
         near: 0.01,
+        rig,
         enter() {
           setSpaceLights(SUN);
           sunLabelOn = true;
@@ -1704,17 +1889,22 @@ function createFlightView3D(THREE, canvas, opts, textures, state) {
           loseFleet(fleet, satScale * 0.9);
         },
         update(t, dt, time) {
-          if (!isGeo) earth.spin.rotation.y = (-90 - lon0) * D2R + t * 6 * D2R * speed;
+          tickRig(rig, dt);
+          rig.spinRate = earthRate * speed * rig.timeScale;
+          if (!isGeo) earth.spin.rotation.y = (-90 - lon0) * D2R + rig.clock * earthRate * speed;
           if (pulse) {
             const k = (time * 0.8) % 1;
-            pulse.scale.setScalar(1 + k * 3);
+            imagedFlash = Math.max(0, imagedFlash - dt);
+            pulse.scale.setScalar((1 + k * 3) * (imagedFlash > 0 ? 1.6 : 1));
             pulse.material.opacity = 0.9 * (1 - k);
+            pulse.material.color.setHex(imagedFlash > 0 ? 0x6fe3c1 : 0xff8a4c);
           }
-          for (const s of stations) {
-            s.mesh.getWorldPosition(s.world);
-            s.up.copy(s.world).normalize();
+          for (const st of stations) {
+            st.mesh.getWorldPosition(st.world);
+            st.up.copy(st.world).normalize();
           }
-          const base = (t * speed * Math.PI * 2) / PERIOD;
+          ring.scale.setScalar(rig.orbitScale);
+          const base = (rig.clock * speed * Math.PI * 2) / PERIOD;
           fleet.forEach((f, k) => {
             if (f.alive) {
               if (isGeo) {
@@ -1722,28 +1912,43 @@ function createFlightView3D(THREE, canvas, opts, textures, state) {
                 f.vel.crossVectors(Y, f.pos);
               } else {
                 const u = u0 + base + (k * Math.PI * 2) / fleet.length;
-                orbitPoint(f.pos, R, inc, raan, u);
-                orbitPoint(f.vel, R, inc, raan, u + 0.01).sub(f.pos);
+                orbitPoint(f.pos, R * rig.orbitScale, inc, raan, u);
+                orbitPoint(f.vel, R * rig.orbitScale, inc, raan, u + 0.01).sub(f.pos);
               }
               f.holder.position.copy(f.pos);
               orient(f, center);
+              craftFx(rig, f, k, time);
               deploy(f.sat, reducedMotion ? smooth(0, 1, t) : smooth(0.25, 1.35, t));
-              eclipse(f, center, 1, dt);
+              eclipse(f, center, 1, dt, rig.dim);
+              if (cover) {
+                cover.paint(f, cover.subPoint(f.pos, sub));
+                // Count each pass whose swath covers the target, as the revisit requirement does.
+                if (targetLocal && cover.halfDeg > 0) {
+                  const over = sub.dot(targetLocal) > Math.cos((cover.halfDeg + 0.2) * D2R);
+                  if (over && !f.overTarget) {
+                    imaged++;
+                    imagedFlash = 1.6;
+                    targetLabel.el.textContent = `${targetName} · ${T(`imaged ${imaged}×`, `terpotret ${imaged}×`)}`;
+                  }
+                  f.overTarget = over;
+                }
+              }
               let best = null;
               let bestD = Infinity;
-              for (const s of stations) {
-                tmp.copy(f.pos).sub(s.world);
+              for (const st of stations) {
+                tmp.copy(f.pos).sub(st.world);
                 const d = tmp.length();
-                if (tmp.dot(s.up) / d > 0.05 && d < bestD) { bestD = d; best = s; }
+                if (tmp.dot(st.up) / d > 0.05 && d < bestD) { bestD = d; best = st; }
               }
-              if (best && !lost) f.link.set(f.pos, best.world);
+              if (best && !lost && !rig.linksDown) f.link.set(f.pos, best.world);
               else f.link.hide();
             } else updateLost(f, dt);
           });
+          cover?.update(dt);
           const D = fitDist(R * (isGeo ? 1.12 : 1.3));
           const sway = 0.1 * Math.sin(time * 0.08) * motion;
           overPos.set(Math.sin(sway), 0, Math.cos(sway)).multiplyScalar(D * Math.cos(16 * D2R)).setY(D * Math.sin(16 * D2R));
-          orbitCamera(t, fleet[0], overPos, center, isGeo ? 1.2 : 0.42, ring);
+          orbitCamera(t, fleet[0], overPos, center, isGeo ? 1.2 : 0.42, ring, rig, dt);
         },
       };
     }
@@ -1765,12 +1970,16 @@ function createFlightView3D(THREE, canvas, opts, textures, state) {
       const ring = ringMesh(root, R, orbitNormal(inc, raan), 0x7cc8ff, 0.65);
       const pole = mesh(G.cone(0.035, 0.1, 12), basic({ color: 0xc9b8ff }), moon.spin, 0, -1.05, 0);
       pole.rotation.x = Math.PI;
+      const polePulse = mesh(keep(new THREE.RingGeometry(0.03, 0.045, 32)), basic({ color: 0xc9b8ff, transparent: true, side: THREE.DoubleSide, depthWrite: false }), moon.spin, 0, -1.004, 0);
+      polePulse.rotation.x = Math.PI / 2;
+      polePulse.visible = false;
       addLabel(root, T('South pole', 'Kutub selatan'), V(0, -1.12, 0), { align: 'left', dx: 12, dy: 6 });
       addLabel(root, T('Earth · DSN', 'Bumi · DSN'), () => tmp2.copy(earth.root.position).add(tmp3.set(0, -0.6, 0)));
       const camDir = V(0.1, 0.18, 1).normalize();
       const fleet = makeFleet(root, count, satScale, R - 1.0);
       fleet.forEach((f) => { f.link = makeLink(root, 0.3); });
       const u0 = frontPhase(R, inc, raan, camDir);
+      const rig = makeRig('moon', { fleet, center: moon.root.position, radius: 1, satScale, ring, polePulse });
       const overPos = V();
       const center = V(0.15, 0, 0);
       const earthSurf = V();
@@ -1778,6 +1987,7 @@ function createFlightView3D(THREE, canvas, opts, textures, state) {
       return {
         root,
         near: 0.01,
+        rig,
         enter() {
           setSpaceLights(SUN);
           sunLabelOn = true;
@@ -1788,22 +1998,25 @@ function createFlightView3D(THREE, canvas, opts, textures, state) {
           loseFleet(fleet, satScale * 0.9);
         },
         update(t, dt, time) {
-          moon.spin.rotation.y = t * 4 * D2R * speed;
+          tickRig(rig, dt);
+          moon.spin.rotation.y = rig.clock * 4 * D2R * speed;
           earth.spin.rotation.y += dt * 20 * D2R * speed;
-          const base = (t * speed * Math.PI * 2) / 6;
+          ring.scale.setScalar(rig.orbitScale);
+          const base = (rig.clock * speed * Math.PI * 2) / 6;
           fleet.forEach((f, k) => {
             if (f.alive) {
               const u = u0 + base + (k * Math.PI * 2) / fleet.length;
-              orbitPoint(f.pos, R, inc, raan, u);
-              orbitPoint(f.vel, R, inc, raan, u + 0.01).sub(f.pos);
+              orbitPoint(f.pos, R * rig.orbitScale, inc, raan, u);
+              orbitPoint(f.vel, R * rig.orbitScale, inc, raan, u + 0.01).sub(f.pos);
               f.holder.position.copy(f.pos);
               orient(f, moon.root.position);
+              craftFx(rig, f, k, time);
               deploy(f.sat, 1);
-              eclipse(f, moon.root.position, 1, dt);
+              eclipse(f, moon.root.position, 1, dt, rig.dim);
               // Behind the Moon, as seen from Earth, there is no line of sight to the DSN.
               earthSurf.copy(earth.root.position).sub(f.pos).normalize();
               const occluded = f.pos.dot(earthSurf) < 0 && tmp.copy(f.pos).addScaledVector(earthSurf, -f.pos.dot(earthSurf)).length() < 1;
-              if (!lost && !occluded && contactWindow(time)) {
+              if (!lost && !occluded && !rig.linksDown && contactWindow(time)) {
                 f.link.set(f.pos, earthSurf.multiplyScalar(-0.36).add(earth.root.position));
               } else f.link.hide();
             } else updateLost(f, dt);
@@ -1811,7 +2024,7 @@ function createFlightView3D(THREE, canvas, opts, textures, state) {
           const D = fitDist(R * 1.32);
           const sway = 0.08 * Math.sin(time * 0.07) * motion;
           overPos.set(Math.sin(sway) * D, D * 0.18, Math.cos(sway) * D).add(center);
-          orbitCamera(t, fleet[0], overPos, center, 0.4, ring);
+          orbitCamera(t, fleet[0], overPos, center, 0.4, ring, rig, dt);
         },
       };
     }
@@ -1851,6 +2064,10 @@ function createFlightView3D(THREE, canvas, opts, textures, state) {
       const satScale = 0.11;
       const fleet = makeFleet(root, count, satScale);
       fleet.forEach((f) => { f.link = makeLink(root, 0.25); });
+      const rig = makeRig('l1', {
+        fleet, center: L1, radius: 1, satScale, sunPos, sunR: 3.4, lineDir, earthPos, bow,
+        travel: earthPos.distanceTo(sunPos) - 3.4 - 0.62, aurora: addAurora(earth.root, 0.62),
+      });
       // Solar wind streaks.
       const WIND = reducedMotion ? 0 : 64;
       const windPos = new Float32Array(Math.max(1, WIND) * 6);
@@ -1877,6 +2094,7 @@ function createFlightView3D(THREE, canvas, opts, textures, state) {
       return {
         root,
         near: 0.01,
+        rig,
         enter() {
           setSpaceLights(tmp.subVectors(sunPos, L1));
           skyMat.uniforms.uSunGlow.value = 0;
@@ -1888,8 +2106,9 @@ function createFlightView3D(THREE, canvas, opts, textures, state) {
           loseFleet(fleet, satScale * 0.9);
         },
         update(t, dt, time) {
+          tickRig(rig, dt);
           earth.spin.rotation.y += dt * 20 * D2R * speed;
-          const base = (t * speed * Math.PI * 2) / 14;
+          const base = (rig.clock * speed * Math.PI * 2) / 14;
           fleet.forEach((f, k) => {
             if (f.alive) {
               const th = base + (k * Math.PI * 2) / fleet.length - 0.6;
@@ -1897,9 +2116,10 @@ function createFlightView3D(THREE, canvas, opts, textures, state) {
               halo(th + 0.01, f.vel).sub(f.pos);
               f.holder.position.copy(f.pos);
               orient(f, earthPos);
+              craftFx(rig, f, k, time);
               deploy(f.sat, 1);
-              tintSat(f.sat, 1, 0);
-              if (!lost && contactWindow(time)) f.link.set(f.pos, earthSurf.subVectors(f.pos, earthPos).setLength(0.62).add(earthPos));
+              tintSat(f.sat, rig.dim, 0);
+              if (!lost && !rig.linksDown && (rig.forceLink || contactWindow(time))) f.link.set(f.pos, earthSurf.subVectors(f.pos, earthPos).setLength(0.62).add(earthPos));
               else f.link.hide();
             } else updateLost(f, dt);
           });
@@ -1915,9 +2135,364 @@ function createFlightView3D(THREE, canvas, opts, textures, state) {
           const D = fitDist(4.7);
           const sway = 0.05 * Math.sin(time * 0.06) * motion;
           overPos.set(0.6 + Math.sin(sway) * D, D * 0.3, Math.cos(sway) * D);
-          orbitCamera(t, fleet[0], overPos, overTarget, 0.45);
+          orbitCamera(t, fleet[0], overPos, overTarget, 0.45, null, rig, dt);
         },
       };
+    }
+
+    // ---------- In-flight events made visible ----------
+    // flash(kind, eventId) starts the event's effect; outcome(effects) plays the consequence of the
+    // team's decision. Each effect drives the active orbit scene's rig and fades out after a while.
+    const warnRing = glow(scene, [1, 0.32, 0.26], 1, { ring: 1, intensity: 0 });
+    warnRing.visible = false;
+    const intruder = mesh(G.box(1, 1, 1), std({ color: 0x5a5e68, roughness: 0.85, metalness: 0.3 }), scene);
+    intruder.visible = false;
+    const hotspot = glow(scene, [1, 0.45, 0.15], 1, { power: 2, intensity: 1.2 });
+    hotspot.material.depthTest = false;
+    hotspot.visible = false;
+    const cme = glow(scene, [1, 0.62, 0.3], 1, { power: 1.2, intensity: 0.55 });
+    cme.visible = false;
+    const cmeFront = glow(scene, [1, 0.78, 0.5], 1, { ring: 1, intensity: 0.7 });
+    cmeFront.visible = false;
+    const RING_BLUE = new THREE.Color(0x7cc8ff);
+    const RING_WARN = new THREE.Color(0xff8a4c);
+    const HARDWARE_EVENTS = new Set(['solar-storm', 'wheel', 'battery-fade', 'instrument']);
+    const fxList = [];
+    let currentFx = null;
+    const fxP = V();
+    const fxV = V();
+    const fxN = V();
+
+    function makeFx(rig, spec) {
+      const linger = spec.linger ?? 4;
+      const e = { age: 0, after: -1, outcome: null };
+      if (spec.focus) {
+        rig.focus = spec.focus;
+        rig.focusOwner = e;
+      }
+      e.update = (dt, time) => {
+        e.age += dt;
+        if (e.after >= 0) e.after += dt;
+        const live = e.after < 0 ? 1 : 1 - smooth(linger * 0.4, linger, e.after);
+        spec.update?.(dt, time, live, e);
+        if (rig.focusOwner === e && e.after > Math.min(2.5, linger * 0.6)) {
+          rig.focus = null;
+          rig.focusOwner = null;
+        }
+        if (e.after > linger) {
+          spec.end?.();
+          return false;
+        }
+        return true;
+      };
+      e.resolve = (effects) => {
+        if (e.after >= 0) return;
+        e.after = 0;
+        e.outcome = effects;
+        spec.resolve?.(effects);
+      };
+      return e;
+    }
+    const lead = (rig) => rig.fleet.find((f) => f.alive) ?? null;
+    /** World position of an Earth-fixed point, and the velocity of the spinning surface there. */
+    const surface = (rig, local) => {
+      rig.earthSpin.localToWorld(fxP.copy(local));
+      fxN.copy(fxP).sub(rig.center).normalize();
+      fxV.set(rig.spinRate * (fxP.z - rig.center.z), 0, -rig.spinRate * (fxP.x - rig.center.x));
+      return fxP;
+    };
+    const facingCamera = (pt, n) => tmp.copy(camera.position).sub(pt).dot(n) > 0;
+
+    const EVENT_FX = {
+      // Charged particles stream in from the Sun; auroras light up; the instrument gets noisy.
+      'solar-storm': (rig) => makeFx(rig, {
+        focus: 'sat',
+        linger: 5,
+        update(dt, time, live, e) {
+          // Particles sweep past the craft from the Sun's side.
+          const sunD = U.sunDir.value;
+          const f = lead(rig);
+          const around = f ? f.pos : rig.center;
+          const spread = f ? rig.satScale * 16 : rig.radius * 2.6;
+          for (let k = Math.floor(dt * 150 * live + Math.random()); k > 0; k--) {
+            tmp.randomDirection().multiplyScalar(spread * Math.sqrt(Math.random()));
+            tmp.addScaledVector(sunD, -tmp.dot(sunD)).add(around).addScaledVector(sunD, spread * 1.2);
+            const v = spread * 2;
+            puff(flames, tmp.x, tmp.y, tmp.z, -sunD.x * v, -sunD.y * v, -sunD.z * v, 1.2, spread * 0.025, spread * 0.012, 0.95,
+              { r: 1, g: 0.93, b: 0.72, lit: 2 });
+          }
+          if (rig.aurora) {
+            rig.aurora.visible = live > 0.02;
+            auroraMat.uniforms.uOpacity.value = 0.6 * live * (0.75 + 0.25 * Math.sin(time * 9) * Math.sin(time * 5.7));
+          }
+          rig.coneFlicker = e.after < 0;
+        },
+        end() {
+          if (rig.aurora) rig.aurora.visible = false;
+          rig.coneFlicker = false;
+        },
+      }),
+      // A piece of debris closes in; after the decision it sweeps past (after a dodge burn, if taken).
+      debris: (rig) => {
+        const f = lead(rig);
+        if (!f) return null;
+        const side = V();
+        return makeFx(rig, {
+          focus: 'sat',
+          linger: 3.5,
+          update(dt, time, live, e) {
+            const sc = rig.satScale;
+            side.set(1, 0.18, 0.3).normalize().applyQuaternion(f.holder.quaternion);
+            const d = e.after < 0 ? lerp(34, 9, easeInOut(clamp(e.age / 2.5))) : lerp(9, -34, clamp(e.after / 1.4));
+            intruder.visible = f.alive && d > -33;
+            intruder.position.copy(f.pos).addScaledVector(side, d * sc);
+            intruder.scale.set(1.1, 0.55, 0.8).multiplyScalar(sc * 1.3);
+            intruder.rotation.x += dt * 2.3;
+            intruder.rotation.y += dt * 1.7;
+            warnRing.visible = f.alive && e.after < 0.8;
+            warnRing.position.copy(f.pos);
+            warnRing.scale.setScalar(sc * 10 * (1 + 0.12 * Math.sin(time * 8)));
+            warnRing.material.uniforms.uIntensity.value = 0.9 * (0.6 + 0.4 * Math.sin(time * 8));
+          },
+          end() {
+            intruder.visible = false;
+            warnRing.visible = false;
+          },
+        });
+      },
+      // A failing reaction wheel: the craft wobbles. A bad outcome leaves a slight permanent jitter.
+      wheel: (rig) => {
+        let target = 0.2;
+        return makeFx(rig, {
+          focus: 'sat',
+          update(dt) { rig.wobble += (target - rig.wobble) * damp(dt, 2); },
+          resolve(effects) { target = (effects.scienceMult ?? 1) < 1 ? 0.045 : 0; },
+          end() { rig.wobble = target; },
+        });
+      },
+      // A storm over the only ground station: clouds, lightning, downlink lost until it clears.
+      'gs-outage': (rig) => {
+        if (!rig.stationLocal) return null;
+        let downFor = Infinity;
+        return makeFx(rig, {
+          focus: 'point',
+          update(dt, time, live, e) {
+            const pt = surface(rig, rig.stationLocal);
+            rig.focusPoint.copy(pt);
+            rig.linksDown = e.after < downFor;
+            for (let k = Math.floor(dt * 60 * live + Math.random()); k > 0; k--) {
+              tmp.randomDirection().multiplyScalar(0.07).add(pt).addScaledVector(fxN, 0.035);
+              const c = jr(0.22, 0.34);
+              puff(smoke, tmp.x, tmp.y, tmp.z, fxV.x + jr(-0.012, 0.012), fxV.y + jr(-0.005, 0.005), fxV.z + jr(-0.012, 0.012),
+                jr(2.2, 3.4), 0.08, 0.2, 0.9 * live, { r: c, g: c * 1.04, b: c * 1.15, drag: 0.5 });
+            }
+            hotspot.visible = live > 0.1 && Math.random() < 0.07 && facingCamera(pt, fxN);
+            if (hotspot.visible) {
+              hotspot.position.copy(pt).addScaledVector(fxN, 0.05);
+              hotspot.scale.setScalar(0.16);
+              hotspot.material.uniforms.uColor.value.set(0.85, 0.9, 1);
+            }
+          },
+          resolve(effects) { downFor = effects.cost ? 0.4 : 3.5; },
+          end() {
+            rig.linksDown = false;
+            hotspot.visible = false;
+          },
+        });
+      },
+      // Instrument noise: its field of view flickers until the decision.
+      instrument: (rig) => makeFx(rig, {
+        focus: 'sat',
+        linger: 3,
+        update(dt, time, live, e) { rig.coneFlicker = e.after < 0; },
+        end() { rig.coneFlicker = false; },
+      }),
+      // Weak battery: the craft browns out. Protecting it turns the instrument off in every eclipse.
+      'battery-fade': (rig) => makeFx(rig, {
+        focus: 'sat',
+        linger: 3,
+        update(dt, time, live, e) { rig.dim = e.after < 0 ? 0.55 + 0.45 * Math.abs(Math.sin(time * 3)) : 1; },
+        resolve(effects) { if ((effects.lifeMonths ?? 0) > 0) rig.coneEclipseOff = true; },
+        end() { rig.dim = 1; },
+      }),
+      // Lunar mascons drag the orbit down (ring turns orange) until a burn raises it again.
+      mascon: (rig) => makeFx(rig, {
+        focus: 'sat',
+        linger: 3.5,
+        update(dt, time, live, e) {
+          const fixed = e.after >= 0 && (e.outcome?.dv ?? 0) < 0;
+          rig.orbitScale += ((fixed ? 1 : 0.93) - rig.orbitScale) * damp(dt, fixed ? 2.5 : 0.8);
+          rig.ring.material.color.lerpColors(RING_BLUE, RING_WARN, smooth(0.995, 0.94, rig.orbitScale));
+        },
+      }),
+      // Semeru erupts: an ash plume and glowing crater. Retasking turns the instrument's view gold.
+      'opp-semeru': (rig) => {
+        if (!rig.targetLocal) return null;
+        return makeFx(rig, {
+          focus: 'point',
+          linger: 9,
+          update(dt, time, live, e) {
+            const pt = surface(rig, rig.targetLocal);
+            rig.focusPoint.copy(pt);
+            for (let k = Math.floor(dt * 55 * live + Math.random()); k > 0; k--) {
+              const c = jr(0.26, 0.38);
+              const up = jr(0.1, 0.18);
+              puff(smoke, pt.x, pt.y, pt.z, fxV.x + fxN.x * up + jr(-0.008, 0.008), fxV.y + fxN.y * up + jr(-0.008, 0.008), fxV.z + fxN.z * up + jr(-0.008, 0.008),
+                jr(4, 5.5), 0.03, jr(0.16, 0.26), 0.85 * live, { r: c, g: c * 0.92, b: c * 0.85, drag: 0.3 });
+            }
+            for (let k = Math.floor(dt * 24 * live + Math.random()); k > 0; k--) {
+              const up = jr(0.02, 0.06);
+              puff(flames, pt.x, pt.y, pt.z, fxV.x + fxN.x * up, fxV.y + fxN.y * up, fxV.z + fxN.z * up, jr(0.3, 0.6), 0.012, 0.03, 1);
+            }
+            hotspot.visible = live > 0.02 && facingCamera(pt, fxN);
+            hotspot.position.copy(pt).addScaledVector(fxN, 0.004);
+            hotspot.scale.setScalar(0.09 * (0.85 + 0.15 * Math.sin(time * 13)));
+            hotspot.material.uniforms.uColor.value.set(1, 0.45, 0.15);
+            if ((e.outcome?.bonusYears ?? 0) > 0) rig.coneColor.lerpVectors(CONE_BASE, CONE_GOLD, live);
+          },
+          end() {
+            hotspot.visible = false;
+            rig.coneColor.copy(CONE_BASE);
+          },
+        });
+      },
+      // Earthquake: calls for help across Indonesia (red). Prioritized relays turn them green.
+      'opp-archipelago': (rig) => {
+        if (!rig.sos) return null;
+        return makeFx(rig, {
+          focus: 'point',
+          linger: 6,
+          update(dt, time, live, e) {
+            rig.focusPoint.copy(surface(rig, rig.sosCenter));
+            rig.sosMat.color.setHex((e.outcome?.bonusYears ?? 0) > 0.05 ? 0x6fe3c1 : 0xff5a4c);
+            rig.sos.forEach((m, i) => {
+              m.visible = live > 0.02;
+              const k = (time * 0.9 + i * 0.17) % 1;
+              m.scale.setScalar(1 + k * 2.5);
+            });
+            rig.sosMat.opacity = 0.9 * live;
+          },
+          end() { rig.sos.forEach((m) => { m.visible = false; }); },
+        });
+      },
+      // Shackleton crater at the south pole: diving to 30 km lowers the orbit for a while.
+      'opp-lunar': (rig) => makeFx(rig, {
+        focus: 'point',
+        linger: 9,
+        update(dt, time, live, e) {
+          rig.focusPoint.set(0, -rig.radius, 0).add(rig.center);
+          rig.polePulse.visible = live > 0.02;
+          const k = (time * 0.8) % 1;
+          rig.polePulse.scale.setScalar(1 + k * 2.5);
+          rig.polePulse.material.opacity = 0.9 * (1 - k) * live;
+          const dive = e.after >= 0 && (e.outcome?.dv ?? 0) < 0 && e.after < 7;
+          rig.orbitScale += ((dive ? 0.975 : 1) - rig.orbitScale) * damp(dt, 1.5);
+          rig.coneColor.lerpVectors(CONE_BASE, CONE_GOLD, dive ? live : 0);
+        },
+        end() {
+          rig.polePulse.visible = false;
+          rig.orbitScale = 1;
+          rig.coneColor.copy(CONE_BASE);
+        },
+      }),
+      // A coronal mass ejection crosses L1 and hits Earth's magnetosphere (bow shock, auroras).
+      'opp-solar': (rig) => {
+        if (!rig.sunPos) return null;
+        return makeFx(rig, {
+          linger: 9,
+          update(dt, time, live, e) {
+            const d = e.age * 1.25;
+            cme.visible = d < rig.travel + 2;
+            cme.position.copy(rig.sunPos).addScaledVector(rig.lineDir, rig.sunR + d);
+            cme.scale.setScalar(2.5 + d * 0.6);
+            cme.material.uniforms.uIntensity.value = 0.9 * clamp(1 - d / (rig.travel + 2)) * live;
+            cmeFront.visible = cme.visible;
+            cmeFront.position.copy(cme.position);
+            cmeFront.scale.copy(cme.scale).multiplyScalar(0.8);
+            cmeFront.material.uniforms.uIntensity.value = 0.8 * clamp(1 - d / (rig.travel + 2)) * live;
+            const hit = smooth(rig.travel - 1.5, rig.travel, d) * (1 - smooth(rig.travel + 3, rig.travel + 8, d)) * live;
+            rig.bow.material.uniforms.uOpacity.value = 0.22 + 0.55 * hit;
+            rig.aurora.visible = hit > 0.02;
+            auroraMat.uniforms.uOpacity.value = 0.7 * hit * (0.8 + 0.2 * Math.sin(time * 7));
+            rig.forceLink = e.after >= 0 && e.after < 4 && (e.outcome?.bonusYears ?? 0) > 0;
+          },
+          end() {
+            cme.visible = false;
+            cmeFront.visible = false;
+            rig.bow.material.uniforms.uOpacity.value = 0.22;
+            rig.aurora.visible = false;
+            rig.forceLink = false;
+          },
+        });
+      },
+    };
+
+    // Consequences shared by all events.
+    function burnFx(rig) {
+      let age = 0;
+      return {
+        update(dt) {
+          age += dt;
+          const on = age < 1.4;
+          for (const f of rig.fleet) {
+            f.sat.burn.visible = on && f.alive;
+            if (on) f.sat.burn.material.uniforms.uIntensity.value = 1.2 + 0.5 * Math.random();
+          }
+          return on;
+        },
+      };
+    }
+    function safeModeFx(rig, seconds) {
+      let age = 0;
+      rig.coneOn = false;
+      return {
+        update(dt) {
+          age += dt;
+          if (age < seconds) return true;
+          rig.coneOn = true;
+          return false;
+        },
+      };
+    }
+    function sparkle(rig, color, count, speedK) {
+      for (const f of rig.fleet) {
+        if (!f.alive) continue;
+        for (let i = 0; i < count; i++) {
+          tmp.randomDirection().multiplyScalar(jr(0.2, 1) * rig.satScale * speedK);
+          puff(flames, f.pos.x, f.pos.y, f.pos.z, tmp.x, tmp.y, tmp.z, jr(0.5, 1.1), rig.satScale * 0.5, rig.satScale * 0.15, 1,
+            { r: color[0], g: color[1], b: color[2], lit: 2 });
+        }
+      }
+    }
+    function outcome(effects = {}) {
+      const rig = activeScene?.rig;
+      if (!rig) return;
+      const id = currentFx?.id;
+      currentFx?.resolve(effects);
+      currentFx = null;
+      if ((effects.dv ?? 0) < 0) fxList.push(burnFx(rig));
+      if (effects.downtimeDays) fxList.push(safeModeFx(rig, Math.min(6, 2 + effects.downtimeDays * 0.3)));
+      if (id === 'instrument' && (effects.scienceMult ?? 1) < 1) rig.coneDegraded = true;
+      const harmed = (effects.lifeMonths ?? 0) < 0 || (effects.scienceMult ?? 1) < 1;
+      if (harmed && HARDWARE_EVENTS.has(id) && !effects.endMission) {
+        sparkle(rig, [1, 0.55, 0.25], 40, 14);
+        shake = Math.max(shake, 0.4);
+      }
+      if ((effects.bonusYears ?? 0) > 0) sparkle(rig, [1, 0.85, 0.4], 26, 8);
+    }
+    function startEvent(id) {
+      // An online room re-sends its state while the decision dialog is open, which announces the
+      // same event again. Keep the effect that is already playing instead of stacking another.
+      if (currentFx?.id === id) return;
+      // A different event while one still waits for its outcome: let the old effect wind down.
+      currentFx?.resolve({});
+      const rig = activeScene?.rig;
+      const fx = rig && EVENT_FX[id]?.(rig);
+      currentFx = fx ?? null;
+      if (fx) {
+        fx.id = id;
+        fxList.push(fx);
+      }
     }
 
     // ---------- Scene switching ----------
@@ -1982,8 +2557,12 @@ function createFlightView3D(THREE, canvas, opts, textures, state) {
       const time = now / 1000;
       U.time.value = time % 1000;
       activeScene.update((now - state.since) / 1000, dt, time, (now - t0) / 1000);
+      for (let i = fxList.length - 1; i >= 0; i--) if (!fxList[i].update(dt, time)) fxList.splice(i, 1);
       updateEffects(dt);
-      for (const b of billboards) b.quaternion.copy(camera.quaternion);
+      for (const b of billboards) {
+        b.parent.getWorldQuaternion(quat);
+        b.quaternion.copy(quat.invert().multiply(camera.quaternion));
+      }
       sky.position.copy(camera.position);
       stars.position.copy(camera.position);
       fade = Math.max(0, fade - dt / 0.5);
@@ -2023,12 +2602,15 @@ function createFlightView3D(THREE, canvas, opts, textures, state) {
         if (lost) return;
         lost = true;
         lostAt = performance.now();
+        if (activeScene.rig) activeScene.rig.focus = null;
         activeScene.lose();
       },
-      flash(kind) {
+      flash(kind, eventId) {
         flashStart = performance.now();
         overlayU.uFlashColor.value.set(...(kind === 'opportunity' ? [1, 0.82, 0.4] : [1, 0.42, 0.42]));
+        if (eventId) startEvent(eventId);
       },
+      outcome,
       destroy() {
         if (destroyed) return;
         destroyed = true;
