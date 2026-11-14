@@ -5,6 +5,7 @@ import { topBar, concept, reqRow, roleMeta } from '../components.js';
 import { codexEntry } from '../../data/codex.js';
 import { leaderboard, playerFor } from '../../state.js';
 import { tx, loc, nameOf, inlineName } from '../../i18n.js';
+import { flightChart } from '../flightChart.js';
 
 const outcomeMeta = (outcome) => ({
   success: { label: tx('Mission success', 'Misi berhasil'), icon: 'check', tone: 'go' },
@@ -66,6 +67,7 @@ export function renderReport(state, m, ctx) {
       <span class="lb-score mono">${e.score}</span>
     </li>`).join('');
 
+  const chart = flightChart(state.flight);
   const concepts = [...new Set(r.findings.map((f) => f.concept).filter((c) => c && codexEntry(c)))];
 
   return `${topBar(state, ctx, 'report')}
@@ -97,6 +99,10 @@ export function renderReport(state, m, ctx) {
           <h2 class="card-h">${icon('alert')} ${tx('Why it went this way', 'Kenapa hasilnya begini')}</h2>
           <ul class="findings">${findings}</ul>
         </section>
+        ${chart ? `<section class="card">
+          <h2 class="card-h">${icon('gauge')} ${tx('Flight recorder', 'Rekaman penerbangan')}</h2>
+          ${chart}
+        </section>` : ''}
         ${team}
         ${imagery}
       </div>

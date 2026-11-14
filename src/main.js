@@ -133,8 +133,11 @@ function applyPick(design, group, id, { silent = false } = {}) {
     else if (ctx && d.bus && d.orbit) {
       const kgNeeded = autoPropellant(d, ctx);
       d.propellant = kgNeeded;
-      if (!silent) notes.push(tx(`Propellant auto-sized to ${smart(kgNeeded)} kg for this mission's delta-v. Adjust it with the slider.`,
-        `Propelan otomatis diatur ${smart(kgNeeded)} kg sesuai delta-v misi ini. Atur dengan slider.`));
+      if (!silent) notes.push(kgNeeded > 0
+        ? tx(`Propellant auto-sized to ${smart(kgNeeded)} kg for this mission's delta-v. Adjust it with the slider.`,
+          `Propelan otomatis diatur ${smart(kgNeeded)} kg sesuai delta-v misi ini. Atur dengan slider.`)
+        : tx('This orbit needs no maneuvers for the planned mission, so the tank starts empty. Add propellant with the slider if you want a reserve.',
+          'Orbit ini tidak butuh manuver untuk misi yang direncanakan, jadi tangki dimulai kosong. Tambah propelan dengan slider jika ingin cadangan.'));
     }
   } else {
     d[group] = id;

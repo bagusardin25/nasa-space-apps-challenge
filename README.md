@@ -7,7 +7,7 @@ Players design a complete space mission (objective → requirements → instrume
 
 ## Run it
 
-No build step and no dependencies: it is plain HTML, CSS and JavaScript modules.
+No build step and no installed dependencies: it is plain HTML, CSS and JavaScript modules. The 3D flight view imports Three.js (r160) as a native ES module from a CDN (unpkg, with jsDelivr as a backup). If that fails (offline, blocked CDN, no WebGL), the game switches to its built-in 2D flight view, so it always runs.
 
 ```bash
 python serve.py
@@ -39,12 +39,16 @@ Upload this folder to any static host: GitHub Pages, Netlify, Vercel or Cloudfla
 | Explained issues ("Flight Director's notes") with codex links | `src/engine/mission.js` |
 | Go/No-Go poll (solo override, or a team vote) | `src/ui/screens/gonogo.js` |
 | Flight simulation with seeded random events and decisions | `src/engine/sim.js`, `src/data/events.js` |
+| Real-time 3D flight view (Three.js, procedural meshes only, no model files): launch pad with the chosen rocket (side boosters, strap-ons), particle exhaust, textured Earth/Moon, orbits at their real inclination, a gold-foil satellite with deploying arrays; 2D fallback | `src/ui/flightCanvas.js`, `src/ui/flightCanvas2d.js` |
 | Scoring, post-mission analysis, real NASA imagery, analog missions, local leaderboard | `src/engine/score.js`, `src/ui/screens/report.js` |
 | Mission Codex: 29 concepts in plain language | `src/data/codex.js` |
 | Difficulty: Cadet / Engineer / Flight Director | `src/data/scenarios.js` (`DIFFICULTIES`) |
 | Shareable design links (`#mission=...`) | `src/state.js` |
 | English / Bahasa Indonesia toggle (EN default, saved per browser) | `src/i18n.js`, `src/data/i18n-id.js`, `idn` fields in scenarios, `CODEX_ID` |
 | Synthesized sound: countdown beeps, liftoff rumble, alert klaxon, Apollo "Quindar" tones, radio static (mute button) | `src/ui/audio.js` |
+| Live spacecraft schematic in the design room: an SVG blueprint that redraws as parts are picked (bus, solar wings, instruments, thrusters, antenna) and previews hovered options | `src/ui/satSchematic.js` |
+| Mission-control telemetry in flight: strip charts for science and fuel, plus subsystem warning lights that blink during anomalies and explain themselves when selected | `src/ui/screens/flight.js` |
+| Flight recorder in the report: science and fuel over time with a marker for every in-flight decision | `src/ui/flightChart.js` |
 | Beginner help: auto guided tour on first visit, "Start here" badge, plain-language section subtitles, Cadet "Suggested" options | `src/ui/tour.js`, `guide` designs in scenarios |
 
 ### Bahasa Indonesia
@@ -76,11 +80,11 @@ Kepler's third law (period), cylindrical-shadow eclipse geometry, solar-array si
 
 **Shown live in the game:**
 
-* NASA Blue Marble (Earth globe texture) via NASA GIBS
+* NASA Blue Marble (Earth globe texture) via NASA GIBS WMS; a copy of the same image in `assets/textures/` is used when GIBS cannot be reached
 * NASA Aqua MODIS Corrected Reflectance (East Java, 20 July 2023) via GIBS / Worldview
 * NASA Black Marble (Suomi NPP VIIRS night lights) via GIBS
 * NASA SDO AIA 193 Å "latest" image (live Sun)
-* NASA SVS CGI Moon Kit color map (from LRO LROC), also used as the Moon texture
+* NASA SVS CGI Moon Kit color map (from LRO LROC), also used as the Moon texture. The texture is served from `assets/textures/` because the SVS server does not send the CORS header WebGL needs for images from another site
 
 **Partner agencies referenced:** ISRO (PSLV, NISAR, Aditya-L1), ESA (SOHO, SMART-1, Ariane 6), JAXA (H3), KASA (Danuri/KPLO with NASA ShadowCam), Indonesia (LAPAN-A2, SATRIA-1).
 
@@ -100,6 +104,7 @@ src/state.js                share links, leaderboard
 src/i18n.js                 English / Bahasa Indonesia helpers
 src/engine/                 physics, mission model, simulation, scoring (pure JS, testable in Node)
 src/data/                   catalog, scenarios, events, codex
-src/ui/                     screens, components, canvas renderer, overlays
+src/ui/                     screens, components, 3D flight view (+ 2D fallback), overlays
+assets/textures/            NASA Earth and Moon textures (offline / CORS-safe copies)
 tests/engine.test.js        engine smoke tests
 ```
