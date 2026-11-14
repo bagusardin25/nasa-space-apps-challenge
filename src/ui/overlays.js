@@ -109,8 +109,7 @@ export function openAbout() {
       'Semua suara disintesis langsung di browser, termasuk nada "Quindar" ala Apollo (2525 Hz / 2475 Hz) yang menandai awal dan akhir setiap transmisi mission control. Pakai tombol speaker untuk membisukan.')}</p>
     <h3>${tx('Use of AI', 'Penggunaan AI')}</h3>
     <p class="small">${tx('Parts of this prototype\'s code and text (including the Indonesian translation) were drafted with an AI coding assistant and reviewed by the team. The game contains no AI-generated images.',
-      'Sebagian kode dan teks prototipe ini (termasuk terjemahan bahasa Indonesia) disusun dengan bantuan asisten AI lalu ditinjau oleh tim. Game ini tidak memuat gambar buatan AI.')}</p>
-    <p class="small muted">${tx('Not an official NASA product. No NASA logos or insignia are used.', 'Bukan produk resmi NASA. Tidak memakai logo atau lambang NASA.')}</p>`, 'about-title');
+      'Sebagian kode dan teks prototipe ini (termasuk terjemahan bahasa Indonesia) disusun dengan bantuan asisten AI lalu ditinjau oleh tim. Game ini tidak memuat gambar buatan AI.')}</p>`, 'about-title');
 }
 
 export function closeOverlays() {

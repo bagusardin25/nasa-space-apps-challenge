@@ -117,7 +117,7 @@ export function renderTitle() {
       </section>
 
       <footer class="lp-foot">
-        <span>${tx('Prototype for NASA Space Apps Challenge 2026, Surabaya. Not an official NASA product.', 'Prototipe untuk NASA Space Apps Challenge 2026, Surabaya. Bukan produk resmi NASA.')}</span>
+        <span>${tx('Prototype for NASA Space Apps Challenge 2026, Surabaya.', 'Prototipe untuk NASA Space Apps Challenge 2026, Surabaya.')}</span>
         <nav aria-label="${tx('More', 'Lainnya')}">
           <button type="button" class="btn btn-ghost btn-sm" data-action="howto">${tx('How to play', 'Cara bermain')}</button>
           <button type="button" class="btn btn-ghost btn-sm" data-action="about">${tx('NASA sources', 'Sumber NASA')}</button>
