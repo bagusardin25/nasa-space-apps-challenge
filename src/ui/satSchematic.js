@@ -16,7 +16,7 @@ const WING = {
   'sa-track': { panels: 3, hFrac: 0.6, cant: 0, joint: true },
   'sa-xl': { panels: 4, hFrac: 0.86, cant: 0, joint: true },
 };
-const LENS = { thermal: '#ff9a5c', multispectral: '#6fe3c1', optical: '#7cc8ff', 'ir-spectro': '#ffd166' };
+const LENS = { thermal: '#d98a5f', multispectral: '#8fbfa6', optical: '#9fb7c9', 'ir-spectro': '#d6bf7c' };
 const SIZE_SCALE = { S: 0.82, M: 1, L: 1.2 };
 
 const f1 = (n) => Number(n.toFixed(1));
@@ -76,7 +76,7 @@ function instrumentGlyph(inst) {
     return `<rect class="sch-inst" x="-6.5" y="0" width="13" height="9" rx="1.5"/><path class="sch-inst" d="M-4.5,9 a4.5 4.5 0 0 0 9,0"/>`;
   }
   // cameras and spectrometers: barrel, baffle and a tinted lens
-  const tint = LENS[cap] ?? '#c4a5ff';
+  const tint = LENS[cap] ?? '#b3a6cf';
   return `<rect class="sch-inst" x="-5" y="0" width="10" height="8" rx="1"/><path class="sch-inst" d="M-5,8 L-8.5,17 L8.5,17 L5,8 Z"/>
     <ellipse cx="0" cy="17" rx="8.5" ry="2.6" fill="${tint}" fill-opacity=".85" stroke="${tint}"/>`;
 }
