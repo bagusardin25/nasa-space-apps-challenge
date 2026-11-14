@@ -120,6 +120,8 @@ export function launchStack(m, p = null) {
       boost: hostId === 'lv-medium' ? tx('Boosters ×6', 'Booster ×6')
         : hostId === 'lv-heavy' ? tx('Side boosters ×2', 'Pendorong samping ×2') : '',
       hint: tx('Drag to rotate', 'Seret untuk memutar'),
+      viewRocket: tx('Whole rocket', 'Seluruh roket'),
+      viewPayload: tx('Payload close-up', 'Muatan dari dekat'),
     },
     summary: tx(`3D view of the launch stack: ${rocketName}${payloadText ? `, carrying ${payloadText}` : ''}. ${note}`,
       `Tampilan 3D susunan peluncuran: ${rocketName}${payloadText ? `, membawa ${payloadText}` : ''}. ${note}`),

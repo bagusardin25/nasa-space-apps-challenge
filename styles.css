@@ -995,7 +995,7 @@ h2, h3 { font-weight: 600; }
 .asm-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 30px; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--muted); font-family: var(--cond); font-size: 13px; font-weight: 600; letter-spacing: .04em; cursor: pointer; }
 .asm-btn:hover { color: var(--text); }
 .asm-btn.is-on { background: var(--accent); color: #111214; }
-.rk3d-slot { position: relative; height: 320px; border-radius: var(--radius); border: 1px solid var(--line); overflow: hidden; background:
+.rk3d-slot { position: relative; height: 420px; border-radius: var(--radius); border: 1px solid var(--line); overflow: hidden; background:
   linear-gradient(rgba(236, 233, 226, .05) 1px, transparent 1px) 0 0 / 100% 20px,
   linear-gradient(90deg, rgba(236, 233, 226, .05) 1px, transparent 1px) 0 0 / 20px 100%, var(--bg-2); }
 .rk3d-wait { position: absolute; inset: 0; display: grid; place-items: center; font-size: 13px; color: var(--muted); }
@@ -1008,6 +1008,10 @@ h2, h3 { font-weight: 600; }
 .rk3d-label.is-left { padding: 1px 15px 1px 5px; }
 .rk3d-label.is-left::before { left: auto; right: 2px; }
 .rk3d-label[hidden] { display: none; }
+.rk3d-modes { position: absolute; left: 8px; bottom: 8px; display: flex; gap: 2px; padding: 2px; border-radius: var(--radius-sm); border: 1px solid var(--line-strong); background: rgba(11, 12, 14, .82); }
+.rk3d-mode { min-height: 26px; padding: 2px 9px; border: 0; border-radius: 2px; background: transparent; color: var(--text-2); font-family: var(--cond); font-size: 12px; font-weight: 600; letter-spacing: .04em; cursor: pointer; }
+.rk3d-mode:hover { color: var(--text); }
+.rk3d-mode.is-on { background: var(--accent); color: #111214; }
 .rk3d-hint { position: absolute; right: 8px; top: 6px; font-family: var(--mono); font-size: 10px; color: var(--muted); pointer-events: none; }
 .rk3d-note { font-size: 13px; color: var(--text-2); }
 .rk3d-note.rk3d-ok { color: var(--go); }
@@ -1017,7 +1021,7 @@ h2, h3 { font-weight: 600; }
 .rk3d-k-lift .sch-dot { background: var(--role-launch); }
 .rk3d .sch-legend { grid-template-columns: minmax(0, 1fr); }
 @media (max-width: 960px) {
-  .rk3d-slot { height: 300px; }
+  .rk3d-slot { height: 360px; }
 }
 
 /* ---------- Online room ---------- */

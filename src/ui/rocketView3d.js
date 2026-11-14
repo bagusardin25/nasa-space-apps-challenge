@@ -18,6 +18,8 @@ let failed = false;
 let wanted = false;
 let latest = null;
 let failHandler = null;
+/** View the player picked with the buttons in the 3D view; null follows the open design tab. */
+let userFocus = null;
 
 /** Called once if Three.js or WebGL is not available, so the page can fall back to the schematic. */
 export function onRocketViewFail(fn) {
@@ -62,6 +64,7 @@ export function detachRocketView() {
 /** Frees the WebGL context (called when leaving the design room, before the flight view starts). */
 export function disposeRocketView() {
   wanted = false;
+  userFocus = null;
   view?.dispose();
   view = null;
 }
@@ -76,7 +79,22 @@ function createView(THREE) {
   labelLayer.className = 'rk3d-labels';
   const hint = document.createElement('span');
   hint.className = 'rk3d-hint';
-  wrap.append(canvas, labelLayer, hint);
+  // Buttons to look at the whole rocket or at the spacecraft inside the fairing.
+  const modes = document.createElement('div');
+  modes.className = 'rk3d-modes';
+  const modeBtns = {};
+  for (const id of ['rocket', 'payload']) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'rk3d-mode';
+    b.addEventListener('click', () => {
+      userFocus = id;
+      if (latest) apply(latest.stack, latest.focus);
+    });
+    modes.append(b);
+    modeBtns[id] = b;
+  }
+  wrap.append(canvas, labelLayer, hint, modes);
   const labelEls = {};
   for (const key of LABEL_KEYS) {
     const el = document.createElement('span');
@@ -89,9 +107,31 @@ function createView(THREE) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
   renderer.setClearColor(0x000000, 0);
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.2;
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(FOV, 1, 0.1, 400);
-  scene.add(new THREE.HemisphereLight(0xeef1f6, 0x2a2c31, 1.5));
+  // A small studio (dark room, bright soft boxes) baked into an environment map, so metal parts
+  // such as the gold foil and the engine bells pick up reflections instead of looking flat.
+  {
+    const studio = new THREE.Scene();
+    const room = new THREE.Mesh(new THREE.SphereGeometry(30, 24, 12), new THREE.MeshBasicMaterial({ color: 0x23262d, side: THREE.BackSide }));
+    studio.add(room);
+    const panel = (x, y, z, sx, sy, sz, level) => {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(sx, sy, sz), new THREE.MeshBasicMaterial({ color: new THREE.Color(level, level, level * 1.04) }));
+      m.position.set(x, y, z);
+      studio.add(m);
+    };
+    panel(0, 22, 0, 26, 1, 26, 7);
+    panel(20, 6, 12, 1, 18, 14, 5);
+    panel(-20, 4, -8, 1, 14, 12, 3);
+    panel(0, 4, 24, 16, 12, 1, 3.5);
+    const pmrem = new THREE.PMREMGenerator(renderer);
+    scene.environment = pmrem.fromScene(studio, 0.03).texture;
+    pmrem.dispose();
+    studio.traverse((o) => { o.geometry?.dispose(); o.material?.dispose(); });
+  }
+  scene.add(new THREE.HemisphereLight(0xeef1f6, 0x2a2c31, 0.75));
   const key = new THREE.DirectionalLight(0xffffff, 2.4);
   key.position.set(5, 8, 7);
   scene.add(key);
@@ -138,6 +178,8 @@ function createView(THREE) {
   // ---------- rocket ----------
   function buildRocket(R, ghost) {
     const g = new THREE.Group();
+    // Parts that do not turn with the rocket: the cut-away fairing always opens toward the camera.
+    const fixed = new THREE.Group();
     const ghostMat = new THREE.MeshBasicMaterial({ color: 0x8f8a80, transparent: true, opacity: 0.13, depthWrite: false });
     const M = ghost ? () => ghostMat : std;
     const hull = M(R.dark ? 0x40444d : 0xe6e2d8, { roughness: 0.5 });
@@ -181,16 +223,27 @@ function createView(THREE) {
     const glass = ghost ? ghostMat : new THREE.MeshStandardMaterial({
       color: 0xe6e2d8, transparent: true, opacity: 0.2, roughness: 0.25, metalness: 0, side: THREE.DoubleSide, depthWrite: false,
     });
-    add(cyl(R.fairR, R.fairR, fairCyl, 48, true), glass, g, 0, y0 + fairCyl / 2).renderOrder = 2;
-    add(new THREE.LatheGeometry(ogivePts(R.fairR, R.fair - fairCyl), 48), glass, g, 0, y0 + fairCyl).renderOrder = 2;
-    const lineMat = new THREE.LineBasicMaterial({ color: 0xece9e2, transparent: true, opacity: ghost ? 0.25 : 0.6 });
+    if (ghost) {
+      add(cyl(R.fairR, R.fairR, fairCyl, 48, true), glass, g, 0, y0 + fairCyl / 2).renderOrder = 2;
+      add(new THREE.LatheGeometry(ogivePts(R.fairR, R.fair - fairCyl), 48), glass, g, 0, y0 + fairCyl).renderOrder = 2;
+    } else {
+      // Cut-away: the far half shell is solid, the near half is faint glass, so the payload is in plain view.
+      const inside = std(R.dark ? 0x565b66 : 0xcfcbc1, { roughness: 0.8, side: THREE.DoubleSide });
+      glass.opacity = 0.07;
+      const pts = ogivePts(R.fairR, R.fair - fairCyl);
+      for (const [mat, start, order] of [[inside, Math.PI / 2, 0], [glass, -Math.PI / 2, 2]]) {
+        add(new THREE.CylinderGeometry(R.fairR, R.fairR, fairCyl, 32, 1, true, start, Math.PI), mat, fixed, 0, y0 + fairCyl / 2).renderOrder = order;
+        add(new THREE.LatheGeometry(pts, 32, start, Math.PI), mat, fixed, 0, y0 + fairCyl).renderOrder = order;
+      }
+    }
+    const lineMat = new THREE.LineBasicMaterial({ color: 0xece9e2, transparent: true, opacity: ghost ? 0.25 : 0.85 });
     const circle = (y) => new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(
       Array.from({ length: 48 }, (_, i) => new THREE.Vector3(Math.cos((i / 48) * Math.PI * 2) * R.fairR * 1.003, y, Math.sin((i / 48) * Math.PI * 2) * R.fairR * 1.003))), lineMat);
-    g.add(circle(y0), circle(y0 + fairCyl));
+    (ghost ? g : fixed).add(circle(y0), circle(y0 + fairCyl));
     // Two seams: a real fairing is two half shells that split apart in flight.
     const profile = [new THREE.Vector2(R.fairR, 0), ...ogivePts(R.fairR, R.fair - fairCyl).map((pt) => new THREE.Vector2(pt.x, pt.y + fairCyl))];
     for (const side of [1, -1]) {
-      g.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(profile.map((pt) => new THREE.Vector3(side * pt.x * 1.003, y0 + pt.y, 0))), lineMat));
+      (ghost ? g : fixed).add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(profile.map((pt) => new THREE.Vector3(side * pt.x * 1.003, y0 + pt.y, 0))), lineMat));
     }
 
     // Strap-on boosters (medium launcher).
@@ -228,7 +281,7 @@ function createView(THREE) {
       const rho = (R.fairR * R.fairR + len * len) / (2 * R.fairR);
       return Math.sqrt(rho * rho - x * x) + R.fairR - rho;
     };
-    return { group: g, y0, top: y0 + R.fair, halfWidth, fairingRadius };
+    return { group: g, fixed, y0, top: y0 + R.fair, halfWidth, fairingRadius };
   }
 
   // ---------- spacecraft (stowed for launch) ----------
@@ -236,10 +289,13 @@ function createView(THREE) {
     const g = new THREE.Group();
     const [w, h] = SAT_SIZE[S.bus] ?? SAT_SIZE.smallsat;
     const glow = alarm ? { emissive: 0xc0271c, emissiveIntensity: 0.6 } : {};
-    const foil = std(0xb8934a, { metalness: 0.7, roughness: 0.4, ...glow });
-    const cell = std(0x27406a, { metalness: 0.3, roughness: 0.35, ...glow });
+    const foil = std(0xd9a441, { metalness: 0.85, roughness: 0.32, ...glow });
+    const cell = std(0x2f55a0, { metalness: 0.4, roughness: 0.3, ...glow });
     const lift = S.thruster ? w * 0.22 : 0.03;
-    add(box(w, h, w), foil, g, 0, lift + h / 2, 0);
+    const bus = add(box(w, h, w), foil, g, 0, lift + h / 2, 0);
+    // A bright outline so your spacecraft stands out from the rocket and the other payloads.
+    bus.add(new THREE.LineSegments(new THREE.EdgesGeometry(box(w * 1.004, h * 1.004, w * 1.004)),
+      new THREE.LineBasicMaterial({ color: alarm ? 0xff6a5c : 0xffe2a3, transparent: true, opacity: 0.9 })));
     if (S.solar === 'wings') {
       // Folded wings: two stacked panels against each side.
       for (const side of [-1, 1]) for (const layer of [0, 1]) add(box(0.022, h * 0.9, w * 0.9), cell, g, side * (w / 2 + 0.02 + layer * 0.03), lift + h / 2, 0);
@@ -280,7 +336,7 @@ function createView(THREE) {
     let base = y0 + 0.14;
     if (stack.rideshare) {
       // Other customers' payloads share the ring below yours.
-      const other = std(0x7b7f87, { transparent: true, opacity: 0.6 });
+      const other = std(0x4b4f58, { transparent: true, opacity: 0.55, roughness: 0.8 });
       for (let k = 0; k < 5; k++) {
         const a = (k * Math.PI * 2) / 5;
         const b = add(box(0.26, 0.3, 0.26), other, g, Math.cos(a) * inner * 0.62, base + 0.15, Math.sin(a) * inner * 0.62);
@@ -350,6 +406,10 @@ function createView(THREE) {
     if (!part) return;
     turntable.remove(part.group);
     disposeTree(part.group);
+    if (part.fixed) {
+      scene.remove(part.fixed);
+      disposeTree(part.fixed);
+    }
   };
 
   function reframe() {
@@ -370,6 +430,7 @@ function createView(THREE) {
       swap(rocket);
       rocket = buildRocket(R, stack.ghost);
       turntable.add(rocket.group);
+      scene.add(rocket.fixed);
       rocketSig = rSig;
       payloadSig = '';
     }
@@ -380,8 +441,15 @@ function createView(THREE) {
       turntable.add(payload.group);
       payloadSig = pSig;
     }
+    if (userFocus) focus = userFocus;
     if (stack.ghost && !stack.sat) focus = 'rocket';
     focusMode = focus;
+    modeBtns.rocket.textContent = stack.labels.viewRocket ?? 'Rocket';
+    modeBtns.payload.textContent = stack.labels.viewPayload ?? 'Payload';
+    for (const [id, b] of Object.entries(modeBtns)) {
+      b.classList.toggle('is-on', id === focus);
+      b.setAttribute('aria-pressed', String(id === focus));
+    }
     // Close up, the fairing label sits above the payload so it never covers it.
     const fairY = focus === 'rocket' ? rocket.y0 + R.fair * 0.5
       : Math.min(rocket.top - 0.25, Math.max(rocket.y0 + R.fair * 0.5, payload.centerY + payload.height / 2 + 0.16));
@@ -474,6 +542,7 @@ function createView(THREE) {
   // Drag sideways to turn the rocket.
   let dragX = null;
   wrap.addEventListener('pointerdown', (e) => {
+    if (e.target.closest('button')) return;
     dragX = e.clientX;
     wrap.setPointerCapture(e.pointerId);
     wrap.classList.add('is-dragging');
