@@ -6,6 +6,13 @@
   "license": "MIT",
   "author": "TUBES ALPRO",
   "contributors": ["Bagus Ardin Prayoga", "Ida Bagus Krisnabhawa"],
+  "homepage": "https://go-no-go-mission.vercel.app",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/bagusardin25/nasa-space-apps-challenge.git"
+  },
+  "keywords": ["nasa-space-apps-2026", "space-mission-design", "educational-game", "threejs", "nasa-data"],
+  "aiDisclosure": "Code, in-game text and the Bahasa Indonesia translation were written with an AI coding assistant (Claude, by Anthropic). The idea, goals and design decisions are the team's. No AI-generated images, audio or video. See 'Use of AI' in README.md.",
   "type": "module",
   "scripts": {
     "start": "python serve.py 5173",
