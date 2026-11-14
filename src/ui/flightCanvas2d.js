@@ -484,7 +484,7 @@ export function createFlightView2D(canvas, opts, textures) {
 
   function label(text, x, y, align = 'center', color = 'rgba(232,238,249,.85)') {
     g.save();
-    g.font = '500 11px "JetBrains Mono", ui-monospace, monospace';
+    g.font = '500 11px "IBM Plex Mono", ui-monospace, monospace';
     g.textAlign = align;
     g.fillStyle = color;
     g.fillText(text, x, y);
