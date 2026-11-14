@@ -17,7 +17,8 @@ and fly the mission. At the end the game tells you what went right, what went wr
 2. **Design.** Four roles build the mission: Science picks instruments, Orbit & Launch picks the
    orbit and rocket, Spacecraft builds the bus, and Ground & Comms gets the data home. Every
    choice changes mass, power, budget, data, comms, lifetime and delta-v, and the dashboard shows
-   it right away.
+   it right away. A 3D view shows the rocket you picked with your spacecraft inside its nose cone,
+   so you can see at a glance whether the rocket can lift it.
 3. **Go/No-Go.** Each role reports GO, CAUTION or NO-GO. In team mode every player votes.
 4. **Flight.** Launch, reach orbit, and decide what to do when a solar storm, space debris or a
    broken reaction wheel shows up.
@@ -52,7 +53,10 @@ spacecraft. There is no single right answer.
 - Three difficulty levels. Cadet marks good options as "Suggested" for beginners.
 - A guided tour on the first visit, and a Codex that explains 29 concepts in plain language.
 - English and Bahasa Indonesia. English is the default.
-- A 3D flight view built with Three.js. If WebGL or the CDN is not available, a 2D view is used.
+- A 3D rocket in the design room: it changes with the launcher, the spacecraft parts and the
+  fleet size, and turns red when the payload is too heavy. A flat schematic is one click away.
+- A 3D flight view built with Three.js. If WebGL or the CDN is not available, the game falls back
+  to 2D views.
 - Sound effects made in code, including Apollo-style "Quindar" tones. There is a mute button.
 - A link to share any design, and a local leaderboard.
 
