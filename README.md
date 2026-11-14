@@ -60,7 +60,7 @@ spacecraft. There is no single right answer.
 
 ## What else is in it
 
-- Solo play, or a team of 2 to 4 players sharing one screen (or a screen share).
+- Solo play, a team of 2 to 4 players sharing one screen, or an online room for up to 4 players on their own screens. One player creates the room and shares a code or a link. Each player claims a station and can only change that part of the spacecraft. The flight director leads the mission. The room code is the only lock, so treat it like a password.
 - Three difficulty levels. Cadet marks good options as "Suggested" for beginners.
 - A guided tour on the first visit, and a Codex that explains 29 concepts in plain language.
 - English and Bahasa Indonesia. English is the default.

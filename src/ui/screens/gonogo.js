@@ -2,11 +2,13 @@
 import { icon, ROLE_ICON } from '../icons.js';
 import { esc, statusPill, money, num } from '../util.js';
 import { topBar, roleMeta, issueItem } from '../components.js';
-import { playerFor, ROLE_IDS } from '../../state.js';
+import { isSharedTeam, playerFor, ROLE_IDS } from '../../state.js';
 import { tx } from '../../i18n.js';
 
 export function renderGoNoGo(state, m, ctx) {
-  const team = state.mode === 'team';
+  const team = isSharedTeam(state);
+  const online = state.mode === 'online' && state.online?.phase === 'live';
+  const lead = !online || state.online.isHost;
   const rows = [...ROLE_IDS, 'mission'].map((id) => {
     const r = roleMeta(id);
     const st = m.roles[id];
@@ -15,10 +17,12 @@ export function renderGoNoGo(state, m, ctx) {
     const player = id === 'mission' ? (team ? tx('Whole team', 'Seluruh tim') : null) : playerFor(state, id);
     const issues = st.issues.filter((i) => i.severity !== 'info').slice(0, 3);
     const missing = st.missing.map((x) => x.label);
+    const mine = !online || state.online.myRoles?.includes(id);
     const voteCtrl = team && id !== 'mission'
       ? `<div class="vote" role="group" aria-label="${esc(tx(`${r.title} vote`, `Suara ${r.title}`))}">
-          <button type="button" class="vote-btn go ${vote === 'go' ? 'is-on' : ''}" aria-pressed="${vote === 'go'}" data-action="vote" data-role="${id}" data-vote="go" ${auto === 'incomplete' ? 'disabled' : ''} data-focus="vote-${id}-go">GO</button>
-          <button type="button" class="vote-btn nogo ${vote === 'nogo' ? 'is-on' : ''}" aria-pressed="${vote === 'nogo'}" data-action="vote" data-role="${id}" data-vote="nogo" data-focus="vote-${id}-nogo">NO-GO</button>
+          <button type="button" class="vote-btn go ${vote === 'go' ? 'is-on' : ''}" aria-pressed="${vote === 'go'}" data-action="vote" data-role="${id}" data-vote="go" ${auto === 'incomplete' || !mine ? 'disabled' : ''} data-focus="vote-${id}-go">GO</button>
+          <button type="button" class="vote-btn nogo ${vote === 'nogo' ? 'is-on' : ''}" aria-pressed="${vote === 'nogo'}" data-action="vote" data-role="${id}" data-vote="nogo" ${!mine ? 'disabled' : ''} data-focus="vote-${id}-nogo">NO-GO</button>
+          ${online && !mine ? `<span class="vote-wait">${tx('Their call', 'Keputusan mereka')}</span>` : ''}
         </div>`
       : '';
     const subtitle = id === 'mission'
@@ -61,7 +65,7 @@ export function renderGoNoGo(state, m, ctx) {
       : `<p class="poll-summary ${allVoted ? 'st-nogo' : 'st-incomplete'}">${icon(allVoted ? 'x' : 'users')} ${allVoted
         ? tx('At least one station called NO-GO. Go back and fix it together.', 'Setidaknya satu stasiun menyatakan NO-GO. Kembali dan perbaiki bersama.')
         : tx('Each lead must call GO or NO-GO for their station.', 'Setiap pimpinan harus menyatakan GO atau NO-GO untuk stasiunnya.')}</p>`;
-    cta = `<button type="button" class="btn btn-primary btn-lg" data-action="launch" ${allGo ? '' : 'disabled'} data-focus="launch">${icon('rocket')}<span>${launchLabel}</span></button>`;
+    cta = `<button type="button" class="btn btn-primary btn-lg" data-action="launch" ${allGo && lead ? '' : 'disabled'} data-focus="launch">${icon('rocket')}<span>${launchLabel}</span></button>`;
   } else {
     const clean = nogoRoles.length === 0;
     summary = clean
@@ -83,7 +87,7 @@ export function renderGoNoGo(state, m, ctx) {
     <ol class="poll">${rows}</ol>
     ${summary}
     <div class="poll-cta">
-      <button type="button" class="btn btn-secondary btn-lg" data-action="go" data-screen="design" data-focus="back-design">${icon('left')}<span>${tx('Back to the design room', 'Kembali ke ruang desain')}</span></button>
+      <button type="button" class="btn btn-secondary btn-lg" data-action="go" data-screen="design" data-focus="back-design" ${online && !lead ? 'disabled' : ''}>${icon('left')}<span>${tx('Back to the design room', 'Kembali ke ruang desain')}</span></button>
       ${cta}
     </div>
   </main>`;

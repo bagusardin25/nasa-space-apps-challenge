@@ -25,6 +25,19 @@ export function initialState() {
     stackView: 'rocket',
     rocket3dFailed: false,
     votes: {},
+    online: {
+      phase: 'idle',
+      code: '',
+      joinCode: '',
+      myName: '',
+      isHost: false,
+      hostId: '',
+      myId: '',
+      myRoles: [],
+      peers: [],
+      message: '',
+    },
+    onlineDecisions: [],
     overrides: 0,
     runCount: 0,
     flight: null,
@@ -40,7 +53,15 @@ export function ctxOf(state) {
   return { scenario, priority: getPriority(scenario, state.priorityId), difficulty: getDifficulty(state.difficultyId) };
 }
 
+export function isSharedTeam(state) {
+  return state.mode === 'team' || state.mode === 'online';
+}
+
 export function playerFor(state, role) {
+  if (state.mode === 'online') {
+    const peer = state.online?.peers?.find((p) => p.roles?.includes(role));
+    return peer?.name || null;
+  }
   if (state.mode !== 'team') return null;
   const idx = state.roleAssign[role] ?? 0;
   const name = (state.players[idx] ?? '').trim();

@@ -1014,3 +1014,32 @@ h2, h3 { font-weight: 600; }
 @media (max-width: 960px) {
   .rk3d-slot { height: 300px; }
 }
+
+/* ---------- Online room ---------- */
+.net-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; margin: 0; padding: 8px var(--gutter); background: var(--panel); border-bottom: 1px solid var(--line); color: var(--text-2); font-size: 14px; }
+.net-bar > span { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
+.net-bar strong { color: var(--text); font-family: var(--mono); letter-spacing: .08em; }
+.net-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.net-msg { margin: 0; color: var(--caution); }
+.role-claims { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; }
+.role-claim { display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 12px; border-radius: var(--radius); border: 1px solid var(--line); background: var(--bg-2); color: var(--text); text-align: left; cursor: pointer; }
+.role-claim strong, .role-claim em { display: block; }
+.role-claim em { font-style: normal; color: var(--muted); font-size: 13px; }
+.role-claim.is-mine { border-color: var(--accent); }
+.role-claim.is-taken, .role-claim:disabled { opacity: .6; cursor: not-allowed; }
+.role-claim.role-science .role-claim-i { color: var(--role-science); }
+.role-claim.role-launch .role-claim-i { color: var(--role-launch); }
+.role-claim.role-spacecraft .role-claim-i { color: var(--role-spacecraft); }
+.role-claim.role-ground .role-claim-i { color: var(--role-ground); }
+.lock-note { display: flex; align-items: flex-start; gap: 8px; margin: 0 0 12px; padding: 10px 12px; border-radius: var(--radius); background: var(--panel-2); color: var(--text-2); }
+.tab-panel.is-locked .opt,
+.tab-panel.is-locked [data-action="count"],
+.tab-panel.is-locked [data-action="autoprop"],
+.tab-panel.is-locked [data-action="starter"],
+.tab-panel.is-locked .prop-panel { pointer-events: none; }
+.briefing.is-spectator .choice,
+.briefing.is-spectator .check { pointer-events: none; }
+.briefing.is-spectator .choice,
+.briefing.is-spectator .check { opacity: .72; }
+.vote-wait, .ev-wait { color: var(--muted); font-size: 13px; }
+.ev-wait { margin: 0 0 10px; }

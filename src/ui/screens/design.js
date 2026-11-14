@@ -9,7 +9,7 @@ import { roleObjectives } from '../../engine/score.js';
 import { icon, ROLE_ICON } from '../icons.js';
 import { esc, num, smart, money, kg, watts, pct, rate, gb, minutes, years, revisit, signed, statusPill } from '../util.js';
 import { topBar, optCard, badge, section, grid, concept, issueItem, reqRow, roleMeta } from '../components.js';
-import { playerFor, ROLE_IDS } from '../../state.js';
+import { isSharedTeam, playerFor, ROLE_IDS } from '../../state.js';
 import { tx, nameOf, blurbOf, fieldOf, capLabel, launchClassLabel } from '../../i18n.js';
 import { satelliteSchematic } from '../satSchematic.js';
 import { launchStack, launchStackPanel } from '../launchStack.js';
@@ -39,19 +39,26 @@ export function renderDesign(state, m, ctx, preview) {
   }).join('');
 
   const panels = { science: scienceTab, launch: launchTab, spacecraft: spacecraftTab, ground: groundTab };
+  const online = state.mode === 'online' && state.online?.phase === 'live';
+  const locked = online && !state.online.myRoles?.includes(state.tab);
+  const lead = !online || state.online.isHost;
+  const owner = online ? playerFor(state, state.tab) : null;
   return `${topBar(state, ctx, 'design')}
   <main class="design-layout" id="main">
     <section class="design-main" aria-label="${tx('Design room', 'Ruang desain')}">
       <div class="design-toolbar">
         <div class="role-tabs" role="tablist" aria-label="${tx('Mission roles', 'Peran misi')}">${tabs}</div>
       </div>
-      <div class="tab-panel" id="panel" role="tabpanel" aria-labelledby="tab-${state.tab}">
+      <div class="tab-panel ${locked ? 'is-locked' : ''}" id="panel" role="tabpanel" aria-labelledby="tab-${state.tab}">
+        ${locked ? `<p class="lock-note">${icon('alert', { size: 15 })} ${owner
+    ? tx(`${owner} leads this station. You can look, not change it.`, `${owner} memimpin stasiun ini. Kamu boleh melihat, tidak mengubahnya.`)
+    : tx('This station is not yours. You can look, not change it.', 'Stasiun ini bukan milikmu. Kamu boleh melihat, tidak mengubahnya.')}</p>` : ''}
         ${roleHeader(state, m, state.tab)}
         ${panels[state.tab](state, m, ctx)}
         <div class="panel-foot">
           <button type="button" class="btn btn-ghost btn-sm" data-action="tour">${icon('compass')}<span>${tx('Guided tour', 'Tur terpandu')}</span></button>
-          <button type="button" class="btn btn-ghost btn-sm" data-action="starter">${icon('wand')}<span>${tx('Load starter design', 'Muat desain awal')}</span></button>
-          <button type="button" class="btn btn-ghost btn-sm" data-action="reset-design">${icon('refresh')}<span>${tx('Clear design', 'Kosongkan desain')}</span></button>
+          ${lead ? `<button type="button" class="btn btn-ghost btn-sm" data-action="starter">${icon('wand')}<span>${tx('Load starter design', 'Muat desain awal')}</span></button>
+          <button type="button" class="btn btn-ghost btn-sm" data-action="reset-design">${icon('refresh')}<span>${tx('Clear design', 'Kosongkan desain')}</span></button>` : ''}
           <button type="button" class="btn btn-ghost btn-sm" data-action="share">${icon('link')}<span>${tx('Copy design link', 'Salin tautan desain')}</span></button>
         </div>
       </div>
@@ -60,17 +67,17 @@ export function renderDesign(state, m, ctx, preview) {
       ${renderDashboard(state, m, ctx, preview)}
     </aside>
   </main>
-  ${mobileBar(m)}`;
+  ${mobileBar(m, lead)}`;
 }
 
 function roleHeader(state, m, id) {
   const r = roleMeta(id);
   const player = playerFor(state, id);
   let goal = '';
-  if (state.mode === 'team' && m.complete) {
+  if (isSharedTeam(state) && m.complete) {
     const o = roleObjectives(m).find((x) => x.role === id);
     goal = `<div class="role-goal ${o.met ? 'is-met' : ''}">${icon(o.met ? 'check' : 'flag', { size: 15 })}<span><strong>${tx('Role goal:', 'Target peran:')}</strong> ${esc(o.goal)} <em>(${esc(o.value)})</em></span></div>`;
-  } else if (state.mode === 'team') {
+  } else if (isSharedTeam(state)) {
     goal = `<div class="role-goal">${icon('flag', { size: 15 })}<span><strong>${tx('Role goal:', 'Target peran:')}</strong> ${esc(roleGoalText(id))}</span></div>`;
   }
   const st = m.roles[id];
@@ -104,6 +111,7 @@ const S = () => ({
 // ---------------- Science ----------------
 function scienceTab(state, m, ctx) {
   const d = m.design;
+  const lead = state.mode !== 'online' || state.online?.phase !== 'live' || state.online.isHost;
   const bus = m.bus;
   const guide = guideFor(ctx);
   const L = S();
@@ -150,7 +158,7 @@ function scienceTab(state, m, ctx) {
           'Instrumen dengan tiga bar hijau paling penting untuk misi ini. Ragu? Muat desain awal atau ikuti tur terpandu.')}</p>
         <div class="callout-actions">
           <button type="button" class="btn btn-secondary btn-sm" data-action="tour">${icon('compass', { size: 15 })}<span>${tx('Take the 1-minute tour', 'Ikuti tur 1 menit')}</span></button>
-          <button type="button" class="btn btn-ghost btn-sm" data-action="starter">${icon('wand', { size: 15 })}<span>${tx('Load starter design', 'Muat desain awal')}</span></button>
+          ${lead ? `<button type="button" class="btn btn-ghost btn-sm" data-action="starter">${icon('wand', { size: 15 })}<span>${tx('Load starter design', 'Muat desain awal')}</span></button>` : ''}
         </div></div></div>`
     : '';
   const cadetNote = guide ? `<p class="cadet-note">${icon('compass', { size: 14 })} ${tx('Cadet mode: options marked "Suggested" add up to a design that works. You can still pick anything.',
@@ -392,6 +400,8 @@ function assemblyPanel(state, m, p) {
 
 export function renderDashboard(state, m, ctx, p) {
   const c = m.cost;
+  const onlineLive = state.mode === 'online' && state.online?.phase === 'live';
+  const lead = !onlineLive || state.online.isHost;
   const spend = c.spend;
   const total = Math.max(c.total, 0.0001);
   const budgetTone = c.total > c.cap ? 'nogo' : c.margin < 0.1 ? 'caution' : 'go';
@@ -451,8 +461,10 @@ export function renderDashboard(state, m, ctx, p) {
       ${more > 0 ? `<p class="muted small">${tx(`+${more} more note${more > 1 ? 's' : ''} in the Go/No-Go poll.`, `+${more} catatan lain di poll Go/No-Go.`)}</p>` : ''}
     </div>
     <div class="dash-cta">
-      <button type="button" class="btn btn-primary btn-block" data-action="go" data-screen="gonogo" data-focus="to-gonogo">
-        ${icon('flag')}<span>${tx('Call the Go/No-Go poll', 'Mulai poll Go/No-Go')}</span>
+      <button type="button" class="btn btn-primary btn-block" data-action="go" data-screen="gonogo" data-focus="to-gonogo" ${lead ? '' : 'disabled'}>
+        ${icon('flag')}<span>${lead
+    ? tx('Call the Go/No-Go poll', 'Mulai poll Go/No-Go')
+    : tx('Waiting for the flight director', 'Menunggu flight director')}</span>
       </button>
       ${missingCount ? `<p class="muted small center">${tx(`${missingCount} choice${missingCount > 1 ? 's' : ''} still open`, `${missingCount} pilihan belum diisi`)}</p>` : ''}
     </div>
@@ -558,10 +570,10 @@ function gaugeList(m, p) {
   return list;
 }
 
-function mobileBar(m) {
+function mobileBar(m, lead = true) {
   const items = [['mass', 'weight'], ['power', 'bolt'], ['budget', 'coins'], ['data', 'database'], ['dv', 'thruster']];
   return `<nav class="mobile-bar" aria-label="${tx('Mission status', 'Status misi')}">
     <a class="mb-status" href="#dashboard">${items.map(([k, ic]) => `<span class="mb-item st-${m.statuses[k]}" title="${k}">${icon(ic, { size: 16 })}</span>`).join('')}<span class="mb-label">${tx('Dashboard', 'Dasbor')}</span></a>
-    <button type="button" class="btn btn-primary btn-sm" data-action="go" data-screen="gonogo">${icon('flag')}<span>Go/No-Go</span></button>
+    <button type="button" class="btn btn-primary btn-sm" data-action="go" data-screen="gonogo" ${lead ? '' : 'disabled'}>${icon('flag')}<span>${lead ? 'Go/No-Go' : tx('Waiting', 'Menunggu')}</span></button>
   </nav>`;
 }

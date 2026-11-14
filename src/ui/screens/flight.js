@@ -86,7 +86,7 @@ export function renderFlight(state, m, ctx) {
 }
 
 /** Drives the flight. Returns a controller with destroy(). */
-export function mountFlight(root, { state, m, ctx, onFinish }) {
+export function mountFlight(root, { state, m, ctx, onFinish, link = null }) {
   const f = state.flight;
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const view = createFlightView(root.querySelector('#flight-canvas'), {
@@ -254,36 +254,54 @@ export function mountFlight(root, { state, m, ctx, onFinish }) {
     onFinish?.();
   }
 
+  let remoteDecisions = [];
+  const eventIndex = () => f.events.filter((e) => e.resolved).length;
+
   function showEvent() {
     const ev = eventView(f, m, ctx);
     if (!ev) return;
+    const decided = remoteDecisions[eventIndex()];
+    if (decided && decided.eventId === ev.id) {
+      active = { lamp: EVENT_LAMP[ev.id] ?? (ev.kind === 'opportunity' ? 'payload' : 'env'), kind: ev.kind, concept: ev.concept, why: ev.title };
+      applyChoice(decided.optionId);
+      return;
+    }
     clearInterval(loop);
     loop = null;
     skipping = false;
     controls(false);
     view.flash(ev.kind);
+    const mine = !link || link.canChoose(ev.id);
     active = { lamp: EVENT_LAMP[ev.id] ?? (ev.kind === 'opportunity' ? 'payload' : 'env'), kind: ev.kind, concept: ev.concept,
-      why: tx(`${ev.title}: waiting for your decision.`, `${ev.title}: menunggu keputusanmu.`) };
+      why: mine
+        ? tx(`${ev.title}: waiting for your decision.`, `${ev.title}: menunggu keputusanmu.`)
+        : tx(`${ev.title}: waiting for another station.`, `${ev.title}: menunggu stasiun lain.`) };
     selected = active.lamp;
     lamps();
     play(ev.kind === 'opportunity' ? 'opportunity' : 'alert');
     phase(ev.kind === 'opportunity' ? tx('Opportunity', 'Peluang') : tx('Anomaly: decision needed', 'Anomali: perlu keputusan'));
     const layer = $('event-layer');
     layer.hidden = false;
+    const wait = !mine && link ? `<p class="ev-wait">${esc(link.waitText(ev.id))}</p>` : '';
     layer.innerHTML = `<div class="event-card ${ev.kind}" role="dialog" aria-modal="true" aria-labelledby="ev-title" aria-describedby="ev-text">
       <p class="eyebrow">${icon(ev.icon, { size: 14 })} ${ev.kind === 'opportunity' ? tx('Opportunity', 'Peluang') : tx('Anomaly', 'Anomali')} · ${tx('Month', 'Bulan')} ${f.month}</p>
       <h2 id="ev-title">${esc(ev.title)}</h2>
       <p id="ev-text">${esc(ev.text)}</p>
-      <div class="ev-options">${ev.options.map((o) => `<button type="button" class="ev-opt" data-option="${o.id}" ${o.disabled ? 'disabled' : ''}>
+      ${wait}
+      <div class="ev-options">${ev.options.map((o) => `<button type="button" class="ev-opt" data-option="${o.id}" ${o.disabled || !mine ? 'disabled' : ''}>
         <span class="ev-opt-l">${esc(o.label)}</span><span class="ev-opt-d">${esc(o.disabled ?? o.detail)}</span></button>`).join('')}</div>
       <div class="ev-foot">${concept(ev.concept, tx('Learn the concept', 'Pelajari konsepnya'))}</div>
     </div>`;
     const first = layer.querySelector('.ev-opt:not([disabled])');
     first?.focus();
-    layer.querySelectorAll('.ev-opt').forEach((btn) => btn.addEventListener('click', () => choose(btn.dataset.option)));
+    layer.querySelectorAll('.ev-opt').forEach((btn) => btn.addEventListener('click', () => {
+      if (!mine) return;
+      if (link) link.send(ev.id, btn.dataset.option, eventIndex());
+      else applyChoice(btn.dataset.option);
+    }));
   }
 
-  function choose(optionId) {
+  function applyChoice(optionId) {
     const res = resolveEvent(f, m, ctx, optionId);
     if (!res) return;
     const bad = res.effects.endMission || (res.effects.scienceMult && res.effects.scienceMult < 1) || (res.effects.lifeMonths && res.effects.lifeMonths < 0);
@@ -296,6 +314,10 @@ export function mountFlight(root, { state, m, ctx, onFinish }) {
     }
     telemetry();
     const layer = $('event-layer');
+    layer.hidden = false;
+    if (!layer.querySelector('.event-card')) {
+      layer.innerHTML = `<div class="event-card ${bad ? 'is-lost' : ''}" role="dialog"><div class="ev-options"></div></div>`;
+    }
     const card = layer.querySelector('.event-card');
     card.querySelector('.ev-options').innerHTML = `<div class="ev-result ${bad ? 'bad' : 'good'}">${icon(bad ? 'alert' : 'check', { size: 16 })}<p>${esc(res.text)}</p></div>
       <button type="button" class="btn btn-primary" data-ev-continue>${icon('play')}<span>${tx('Continue mission', 'Lanjutkan misi')}</span></button>`;
@@ -404,6 +426,10 @@ export function mountFlight(root, { state, m, ctx, onFinish }) {
       clearInterval(loop);
       timers.forEach(clearTimeout);
       view.destroy();
+    },
+    setDecisions(list) {
+      remoteDecisions = list ?? [];
+      if (f.pendingEvent) showEvent();
     },
   };
 }
