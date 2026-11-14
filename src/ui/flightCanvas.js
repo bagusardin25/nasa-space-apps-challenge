@@ -118,7 +118,7 @@ export function createFlightView(canvas, opts) {
 }
 
 // Launcher silhouettes (scene units ≈ 4.5 m). Rideshare payloads fly on a medium-heavy host rocket.
-const ROCKETS = {
+export const ROCKETS = {
   'lv-small': { r: 0.42, body: 7.6, fair: 1.9, fairR: 0.46, dark: true, strapons: 0, sideCores: 0 },
   'lv-medium': { r: 0.55, body: 9.4, fair: 2.5, fairR: 0.66, dark: false, strapons: 6, sideCores: 0 },
   'lv-mediumheavy': { r: 0.6, body: 11.6, fair: 2.8, fairR: 0.72, dark: false, strapons: 0, sideCores: 0 },
