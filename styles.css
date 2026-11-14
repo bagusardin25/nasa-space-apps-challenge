@@ -117,6 +117,11 @@ img { max-width: 100%; display: block; }
 .step { display: flex; align-items: center; gap: 6px; padding: 5px 10px 5px 6px; border-radius: 3px; color: var(--muted); font-size: 12.5px; }
 .step-n { width: 20px; height: 20px; border-radius: 50%; border: 1px solid var(--line-2); display: grid; place-items: center; font-family: var(--mono); font-size: 11px; }
 .step.is-done { color: var(--text-2); }
+.step.is-link { padding: 0; }
+.step-btn { display: flex; align-items: center; gap: 6px; padding: 5px 10px 5px 6px; border: 0; border-radius: 3px; background: transparent; color: inherit; font: inherit; cursor: pointer; }
+.step-btn:hover, .step-btn:focus-visible { background: var(--panel-2); color: var(--text); }
+.step-btn:hover .step-l, .step-btn:focus-visible .step-l { text-decoration: underline; text-underline-offset: 3px; }
+.flight-back { margin-left: auto; }
 .step.is-done .step-n { background: rgba(87, 194, 127, .14); border-color: rgba(87, 194, 127, .5); color: var(--go); }
 .step.is-current { color: var(--text); background: var(--panel-2); }
 .step.is-current .step-n { background: var(--accent); border-color: var(--accent); color: #111214; font-weight: 600; }

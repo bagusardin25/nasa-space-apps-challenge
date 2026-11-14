@@ -389,6 +389,22 @@ app.addEventListener('click', async (e) => {
       go(screen);
       break;
     }
+    case 'step': {
+      // Go back to an earlier step from the bar at the top (or the button under the flight view).
+      const screen = el.dataset.screen;
+      if (!['briefing', 'design', 'gonogo'].includes(screen)) break;
+      const midFlight = state.screen === 'flight' && !state.flight?.done;
+      if (state.mode === 'online' && (state.online.phase === 'live' || state.online.phase === 'connecting')) {
+        if (state.online.phase !== 'live' || !state.online.isHost) { toast(netMessage('host-only'), 'bad'); break; }
+        if (state.screen === 'flight') break;
+        session.act({ type: 'screen', screen, clearVotes: true });
+        break;
+      }
+      if (state.screen === 'flight' || state.screen === 'report') state.votes = {};
+      go(screen);
+      if (midFlight) toast(tx('Flight stopped. Change the design, then launch again.', 'Penerbangan dihentikan. Ubah desainnya, lalu luncurkan lagi.'));
+      break;
+    }
     case 'codex': openCodex(el.dataset.id ?? null); break;
     case 'howto': openHowTo({ canTour: state.screen === 'design', onTour: runTour }); break;
     case 'about': openAbout(); break;

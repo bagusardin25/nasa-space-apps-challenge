@@ -42,9 +42,18 @@ export function prefTools({ langLocked = false } = {}) {
 export function topBar(state, ctx, current) {
   const list = steps();
   const idx = list.findIndex((s) => s.id === current);
+  // Earlier steps are buttons, so a team can go back and fix something. A flight cannot be re-entered,
+  // and in an online room only the flight director moves the team (and not in the middle of a flight).
+  const live = state.mode === 'online' && state.online?.phase === 'live';
+  const canGoBack = !live || (state.online.isHost && current !== 'flight');
   const stepHtml = list.map((s, i) => {
     const cls = i < idx ? 'is-done' : i === idx ? 'is-current' : '';
-    return `<li class="step ${cls}" ${i === idx ? 'aria-current="step"' : ''}><span class="step-n">${i + 1}</span><span class="step-l">${s.label}</span></li>`;
+    const inner = `<span class="step-n">${i + 1}</span><span class="step-l">${s.label}</span>`;
+    if (i < idx && s.id !== 'flight' && canGoBack) {
+      const hintText = tx(`Back to ${s.label}`, `Kembali ke ${s.label}`);
+      return `<li class="step ${cls} is-link"><button type="button" class="step-btn" data-action="step" data-screen="${s.id}" title="${hintText}" aria-label="${hintText}">${inner}</button></li>`;
+    }
+    return `<li class="step ${cls}" ${i === idx ? 'aria-current="step"' : ''}>${inner}</li>`;
   }).join('');
   const mission = ctx
     ? `<div class="tb-mission"><span class="tb-icon" style="--accent:${ctx.scenario.accent}">${icon(ctx.scenario.icon, { size: 18 })}</span>

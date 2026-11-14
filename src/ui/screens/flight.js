@@ -59,6 +59,7 @@ export function renderFlight(state, m, ctx) {
         <button type="button" class="btn btn-secondary btn-sm" data-action="flight-pause" id="c-pause" disabled>${icon('pause')}<span>${tx('Pause', 'Jeda')}</span></button>
         <button type="button" class="btn btn-secondary btn-sm" data-action="flight-speed" id="c-speed" disabled>${icon('forward')}<span>${tx('Speed', 'Kecepatan')} ×1</span></button>
         <button type="button" class="btn btn-ghost btn-sm" data-action="flight-skip" id="c-skip" disabled>${icon('skip')}<span>${tx('Skip to next event', 'Lompat ke event berikutnya')}</span></button>
+        ${state.mode === 'online' ? '' : `<button type="button" class="btn btn-ghost btn-sm flight-back" data-action="step" data-screen="design" title="${tx('Stop this flight and change the design', 'Hentikan penerbangan ini dan ubah desain')}">${icon('left')}<span>${tx('Back to design', 'Kembali ke desain')}</span></button>`}
       </div>
     </section>
     <aside class="telemetry" aria-label="${tx('Telemetry', 'Telemetri')}">
