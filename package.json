@@ -5,7 +5,7 @@
   "description": "GO/NO-GO: an interactive space mission design game (NASA Space Apps Challenge 2026 prototype).",
   "license": "MIT",
   "author": "TUBES ALPRO",
-  "contributors": ["Bagus Ardin Prayoga", "Ida Bagus Krisnabhawa"],
+  "contributors": ["Bagus Ardin Prayoga", "Ida Bagus Giri Krisnabhawa", "Aldi Rachmatdianto", "Naufal Syahruradli"],
   "homepage": "https://go-no-go-mission.vercel.app",
   "repository": {
     "type": "git",
