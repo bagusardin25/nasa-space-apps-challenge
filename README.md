@@ -2,7 +2,7 @@
 
 **Design a spacecraft, win the launch poll, fly the mission, and find out why it worked or failed.**
 
-By team **TUBES ALPRO** (Bagus Ardin Prayoga, Ida Bagus Giri Krisnabhawa, and Aldi Rachmatdianto) for the 2026 NASA Space
+By team **TUBES ALPRO** (Bagus Ardin Prayoga, Ida Bagus Giri Krisnabhawa, Aldi Rachmatdianto, and Naufal Syahruradli) for the 2026 NASA Space
 Apps Challenge, challenge
 [*Space Mission Design Game*](https://www.spaceappschallenge.org/2026/challenges/space-mission-design-game/)
 (Surabaya local event).
@@ -293,6 +293,7 @@ competitive rounds where several teams solve the same mission, and more missions
 - Bagus Ardin Prayoga
 - Ida Bagus Giri Krisnabhawa
 - Aldi Rachmatdianto
+- Naufal Syahruradli
 
 ## Credits
 
